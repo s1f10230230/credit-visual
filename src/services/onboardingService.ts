@@ -422,7 +422,7 @@ class OnboardingService {
       setTimeout(() => {
         gmailService.fetchCreditCardEmails()
           .then(() => console.log('Initial email fetch completed'))
-          .catch(err => console.error('Initial email fetch failed:', err));
+          .catch((err: any) => console.error('Initial email fetch failed:', err));
       }, 2000);
     }
   }
@@ -440,8 +440,8 @@ class OnboardingService {
 
   private trackEvent(eventName: string, data: any): void {
     // Analytics tracking
-    if (typeof gtag !== 'undefined') {
-      gtag('event', eventName, {
+    if (typeof window !== 'undefined' && (window as any).gtag) {
+      (window as any).gtag('event', eventName, {
         event_category: 'onboarding',
         ...data
       });
@@ -456,11 +456,11 @@ class OnboardingService {
   async connectGmail(): Promise<{success: boolean, error?: string}> {
     try {
       const result = await gmailService.authenticate();
-      if (result.success) {
+      if (result && result.success) {
         await this.updateUserProfile({ email: result.email });
         return { success: true };
       }
-      return { success: false, error: result.error };
+      return { success: false, error: result?.error || 'Authentication failed' };
     } catch (error) {
       return { success: false, error: 'Gmail連携に失敗しました' };
     }
@@ -474,7 +474,7 @@ class OnboardingService {
   async setBudget(monthlyBudget: number, categoryBudgets?: {[category: string]: number}): Promise<void> {
     await this.updateUserProfile({ 
       monthlyBudget,
-      // Could also store category budgets
+      categoryBudgets
     });
   }
 

@@ -155,9 +155,10 @@ class PWAService {
     if (!this.swRegistration) return;
 
     try {
+      const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
       const subscription = await this.swRegistration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: this.urlBase64ToUint8Array(process.env.REACT_APP_VAPID_PUBLIC_KEY || '')
+        applicationServerKey: vapidKey ? this.urlBase64ToUint8Array(vapidKey) : undefined
       });
 
       // Send subscription to server

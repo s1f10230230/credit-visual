@@ -1,4 +1,5 @@
 import { CreditTransaction } from './analyticsService';
+import cardDatabaseData from '../data/cardDatabase.json';
 
 export interface CardBenefit {
   cardName: string;
@@ -21,6 +22,16 @@ export interface CardBenefit {
   annualFee: number;
   pointValue: number; // ¥ per point
   pointExpiry: number; // months
+  pointCurrency?: string;
+  tags?: string[];
+}
+
+interface CardDatabaseConfig {
+  lastUpdated: string;
+  version: string;
+  cards: CardBenefit[];
+  categoryMapping: { [key: string]: string[] };
+  merchantAliases: { [key: string]: string[] };
 }
 
 export interface OptimalCardRecommendation {
@@ -65,110 +76,82 @@ export interface LocationContext {
 
 class SmartRecommendationService {
   private cardDatabase: CardBenefit[] = [];
+  private categoryMapping: { [key: string]: string[] } = {};
+  private merchantAliases: { [key: string]: string[] } = {};
   private userCards: string[] = [];
   private realtimeAlerts: RealTimeAlert[] = [];
   private locationUpdateInterval: number | null = null;
+  private databaseVersion: string = '';
 
   constructor() {
-    this.initializeCardDatabase();
-    this.startRealtimeMonitoring();
+    this.initializeCardDatabase().then(() => {
+      this.startRealtimeMonitoring();
+    }).catch(error => {
+      console.error('Failed to initialize card database:', error);
+    });
+  }
+  
+  // Public method to check if database is ready
+  isDatabaseReady(): boolean {
+    return this.cardDatabase.length > 0;
+  }
+  
+  // Method to get database info
+  getDatabaseInfo(): { version: string; cardCount: number; lastUpdated?: string } {
+    return {
+      version: this.databaseVersion,
+      cardCount: this.cardDatabase.length,
+      lastUpdated: cardDatabaseData.lastUpdated
+    };
   }
 
-  private initializeCardDatabase(): void {
+  private async initializeCardDatabase(): Promise<void> {
+    try {
+      const config = cardDatabaseData as CardDatabaseConfig;
+      
+      this.cardDatabase = config.cards;
+      this.categoryMapping = config.categoryMapping;
+      this.merchantAliases = config.merchantAliases;
+      this.databaseVersion = config.version;
+      
+      console.log(`Card database loaded: ${this.cardDatabase.length} cards, version ${this.databaseVersion}`);
+      
+      // Validate data integrity
+      this.validateCardDatabase();
+      
+    } catch (error) {
+      console.error('Failed to load card database:', error);
+      this.loadFallbackDatabase();
+    }
+  }
+  
+  private validateCardDatabase(): void {
+    for (const card of this.cardDatabase) {
+      if (!card.cardName || !card.issuer || card.generalCashback == null) {
+        console.warn(`Invalid card data:`, card);
+      }
+      
+      // Validate category data
+      for (const [category, benefit] of Object.entries(card.categories)) {
+        if (benefit.cashback == null || benefit.points == null) {
+          console.warn(`Invalid category benefit for ${card.cardName}:${category}`, benefit);
+        }
+      }
+    }
+  }
+  
+  private loadFallbackDatabase(): void {
+    console.log('Loading fallback card database...');
+    // Minimal fallback data
     this.cardDatabase = [
       {
         cardName: "楽天カード",
         issuer: "楽天",
         generalCashback: 1.0,
         categories: {
-          "通販": { cashback: 3.0, points: 300, multiplier: 3, conditions: "楽天市場での利用" },
-          "ガソリン": { cashback: 2.0, points: 200, multiplier: 2, conditions: "ENEOS利用" },
           "その他": { cashback: 1.0, points: 100, multiplier: 1 }
         },
-        specialOffers: [
-          {
-            merchant: "楽天市場",
-            cashback: 3.0,
-            conditions: "月末まで"
-          },
-          {
-            merchant: "マクドナルド",
-            cashback: 2.0,
-            validUntil: "2024-12-31"
-          }
-        ],
-        annualFee: 0,
-        pointValue: 1.0,
-        pointExpiry: 12
-      },
-      {
-        cardName: "JCBカード W",
-        issuer: "JCB",
-        generalCashback: 1.0,
-        categories: {
-          "コンビニ": { cashback: 2.0, points: 200, multiplier: 2, conditions: "セブン-イレブン、ローソン" },
-          "カフェ": { cashback: 5.5, points: 550, multiplier: 5.5, conditions: "スターバックス" },
-          "通販": { cashback: 2.0, points: 200, multiplier: 2, conditions: "Amazon" },
-          "その他": { cashback: 1.0, points: 100, multiplier: 1 }
-        },
-        specialOffers: [
-          {
-            merchant: "Amazon",
-            cashback: 2.0,
-            conditions: "常時"
-          },
-          {
-            merchant: "スターバックス",
-            cashback: 5.5,
-            conditions: "常時"
-          }
-        ],
-        annualFee: 0,
-        pointValue: 1.0,
-        pointExpiry: 24
-      },
-      {
-        cardName: "三井住友カード(NL)",
-        issuer: "三井住友",
-        generalCashback: 0.5,
-        categories: {
-          "コンビニ": { cashback: 7.0, points: 700, multiplier: 14, conditions: "タッチ決済時" },
-          "ファストフード": { cashback: 7.0, points: 700, multiplier: 14, conditions: "マクドナルド等でタッチ決済" },
-          "その他": { cashback: 0.5, points: 50, multiplier: 1 }
-        },
-        specialOffers: [
-          {
-            merchant: "セブン-イレブン",
-            cashback: 7.0,
-            conditions: "タッチ決済"
-          },
-          {
-            merchant: "ローソン",
-            cashback: 7.0,
-            conditions: "タッチ決済"
-          }
-        ],
-        annualFee: 0,
-        pointValue: 1.0,
-        pointExpiry: 36
-      },
-      {
-        cardName: "リクルートカード",
-        issuer: "リクルート",
-        generalCashback: 1.2,
-        categories: {
-          "ガソリン": { cashback: 1.2, points: 120, multiplier: 1.2 },
-          "公共料金": { cashback: 1.2, points: 120, multiplier: 1.2 },
-          "携帯料金": { cashback: 1.2, points: 120, multiplier: 1.2 },
-          "その他": { cashback: 1.2, points: 120, multiplier: 1.2 }
-        },
-        specialOffers: [
-          {
-            merchant: "じゃらん",
-            cashback: 3.2,
-            conditions: "旅行予約"
-          }
-        ],
+        specialOffers: [],
         annualFee: 0,
         pointValue: 1.0,
         pointExpiry: 12
@@ -183,21 +166,48 @@ class SmartRecommendationService {
     location?: LocationContext
   ): Promise<OptimalCardRecommendation> {
     try {
+      // Input validation
+      if (!amount || amount <= 0) {
+        throw new Error('Invalid amount provided');
+      }
+      
+      if (!this.isDatabaseReady()) {
+        console.warn('Card database not ready, using fallback');
+        return this.getDefaultRecommendation();
+      }
+      
+      // Normalize inputs
+      const normalizedMerchant = merchant.trim();
+      const normalizedCategory = this.normalizeCategory(category.trim());
+      
       // Analyze all available cards for this transaction
       const recommendations = this.cardDatabase.map(card => {
-        const benefit = this.calculateBenefit(card, amount, merchant, category);
-        return {
-          card,
-          benefit,
-          score: this.calculateOptimalityScore(card, benefit, amount)
-        };
-      });
+        try {
+          const benefit = this.calculateBenefit(card, amount, normalizedMerchant, normalizedCategory);
+          return {
+            card,
+            benefit,
+            score: this.calculateOptimalityScore(card, benefit, amount)
+          };
+        } catch (cardError) {
+          console.warn(`Error calculating benefit for ${card.cardName}:`, cardError);
+          return {
+            card,
+            benefit: { cashbackAmount: 0, pointsEarned: 0, cashback: 0 },
+            score: 0
+          };
+        }
+      }).filter(rec => rec.score >= 0); // Filter out invalid results
+
+      if (recommendations.length === 0) {
+        throw new Error('No valid card recommendations found');
+      }
 
       // Sort by score (highest benefit)
       recommendations.sort((a, b) => b.score - a.score);
       
       const bestRecommendation = recommendations[0];
-      const currentCardBenefit = this.getCurrentCardBenefit(amount, merchant, category);
+      const currentCardBenefit = this.getCurrentCardBenefit(amount, normalizedMerchant, normalizedCategory);
       const potentialSavings = bestRecommendation.benefit.cashbackAmount - currentCardBenefit.cashbackAmount;
 
       return {
@@ -206,18 +216,18 @@ class SmartRecommendationService {
         potentialSavings: Math.max(0, potentialSavings),
         cashbackAmount: bestRecommendation.benefit.cashbackAmount,
         pointsEarned: bestRecommendation.benefit.pointsEarned,
-        reason: this.generateRecommendationReason(bestRecommendation.card, merchant, category),
+        reason: this.generateRecommendationReason(bestRecommendation.card, normalizedMerchant, normalizedCategory),
         confidence: this.calculateConfidence(bestRecommendation, recommendations),
         alternatives: recommendations.slice(1, 4).map(rec => ({
           cardName: rec.card.cardName,
           savings: Math.max(0, rec.benefit.cashbackAmount - currentCardBenefit.cashbackAmount),
-          reason: this.generateAlternativeReason(rec.card, merchant, category)
+          reason: this.generateAlternativeReason(rec.card, normalizedMerchant, normalizedCategory)
         }))
       };
 
     } catch (error) {
       console.error('Failed to recommend optimal card:', error);
-      return this.getDefaultRecommendation();
+      return this.getDefaultRecommendation(error.message);
     }
   }
 
@@ -335,38 +345,50 @@ class SmartRecommendationService {
     pointsEarned: number;
     cashback: number;
   } {
+    if (!card) {
+      throw new Error('Card data is null or undefined');
+    }
+    
+    if (!amount || amount <= 0) {
+      throw new Error('Invalid amount for benefit calculation');
+    }
+
     // Check for special merchant offers first
-    const specialOffer = card.specialOffers.find(offer => 
-      merchant.toLowerCase().includes(offer.merchant.toLowerCase()) ||
-      offer.merchant.toLowerCase().includes(merchant.toLowerCase())
+    const specialOffer = card.specialOffers?.find(offer => 
+      this.matchesMerchant(merchant, offer.merchant) && this.isOfferValid(offer)
     );
 
-    if (specialOffer && this.isOfferValid(specialOffer)) {
+    if (specialOffer && this.validateOfferConditions(specialOffer, merchant, category)) {
       const cashbackAmount = amount * (specialOffer.cashback / 100);
       return {
         cashbackAmount,
-        pointsEarned: cashbackAmount / card.pointValue,
+        pointsEarned: cashbackAmount / (card.pointValue || 1.0),
         cashback: specialOffer.cashback
       };
     }
 
     // Check category-specific benefits
-    const categoryBenefit = card.categories[category] || card.categories["その他"];
-    if (categoryBenefit) {
+    const categories = card.categories || {};
+    const categoryBenefit = categories[category] || categories["その他"];
+    
+    if (categoryBenefit && this.validateCategoryConditions(categoryBenefit, merchant, category)) {
       const cashbackAmount = amount * (categoryBenefit.cashback / 100);
+      // Fix: Convert points from per-100-yen basis to actual points earned
+      const pointsEarned = (categoryBenefit.points / 100) * (amount / 100);
       return {
         cashbackAmount,
-        pointsEarned: categoryBenefit.points * (amount / 100),
+        pointsEarned,
         cashback: categoryBenefit.cashback
       };
     }
 
-    // Use general cashback
-    const cashbackAmount = amount * (card.generalCashback / 100);
+    // Use general cashback as fallback
+    const generalCashback = card.generalCashback || 0;
+    const cashbackAmount = amount * (generalCashback / 100);
     return {
       cashbackAmount,
-      pointsEarned: cashbackAmount / card.pointValue,
-      cashback: card.generalCashback
+      pointsEarned: cashbackAmount / (card.pointValue || 1.0),
+      cashback: generalCashback
     };
   }
 
@@ -440,14 +462,17 @@ class SmartRecommendationService {
     return Math.min(0.95, 0.5 + (scoreGap / bestScore));
   }
 
-  private getDefaultRecommendation(): OptimalCardRecommendation {
+  private getDefaultRecommendation(errorMessage?: string): OptimalCardRecommendation {
+    const fallbackCard = this.cardDatabase.length > 0 ? this.cardDatabase[0].cardName : "楽天カード";
+    const reason = errorMessage ? `エラー: ${errorMessage}` : "一般的に利用しやすいカード";
+    
     return {
-      bestCard: "楽天カード",
+      bestCard: fallbackCard,
       currentCard: "現在のカード",
       potentialSavings: 0,
       cashbackAmount: 0,
       pointsEarned: 0,
-      reason: "一般的に利用しやすいカード",
+      reason,
       confidence: 0.3,
       alternatives: []
     };
@@ -477,6 +502,91 @@ class SmartRecommendationService {
     
     const expiryDate = new Date(offer.validUntil);
     return expiryDate > new Date();
+  }
+
+  private matchesMerchant(transactionMerchant: string, offerMerchant: string): boolean {
+    const normalizeText = (text: string) => text.toLowerCase().replace(/[\s\-\u30FB]/g, '');
+    const txMerchant = normalizeText(transactionMerchant);
+    const offerMerch = normalizeText(offerMerchant);
+    
+    // Exact match or contains
+    if (txMerchant === offerMerch || txMerchant.includes(offerMerch) || offerMerch.includes(txMerchant)) {
+      return true;
+    }
+    
+    // Check merchant aliases
+    for (const [canonical, aliases] of Object.entries(this.merchantAliases)) {
+      const normalizedCanonical = normalizeText(canonical);
+      if (normalizedCanonical === offerMerch || offerMerch.includes(normalizedCanonical)) {
+        // Check if transaction merchant matches any alias
+        for (const alias of aliases) {
+          if (txMerchant.includes(normalizeText(alias))) {
+            return true;
+          }
+        }
+      }
+    }
+    
+    return false;
+  }
+  
+  private normalizeCategory(category: string): string {
+    const categoryLower = category.toLowerCase();
+    
+    // Find matching standardized category
+    for (const [standardCategory, variations] of Object.entries(this.categoryMapping)) {
+      for (const variation of variations) {
+        if (categoryLower === variation.toLowerCase()) {
+          return variations[0]; // Return primary Japanese term
+        }
+      }
+    }
+    
+    return category; // Return original if no mapping found
+  }
+
+  private validateOfferConditions(offer: any, merchant: string, category: string): boolean {
+    if (!offer.conditions) return true;
+    
+    // Simple condition validation - can be expanded
+    const conditions = offer.conditions.toLowerCase();
+    
+    // Check if merchant matches specific conditions
+    if (conditions.includes('タッチ決済')) {
+      // In real implementation, would check payment method
+      return true; // Assume touch payment capable
+    }
+    
+    return true; // Default to true for now
+  }
+
+  private validateCategoryConditions(categoryBenefit: any, merchant: string, category: string): boolean {
+    if (!categoryBenefit.conditions) return true;
+    
+    const conditions = categoryBenefit.conditions.toLowerCase();
+    const merchantLower = merchant.toLowerCase();
+    
+    // Check specific merchant conditions
+    if (conditions.includes('楽天市場') && !merchantLower.includes('楽天')) {
+      return false;
+    }
+    if (conditions.includes('amazon') && !merchantLower.includes('amazon')) {
+      return false;
+    }
+    if (conditions.includes('eneos') && !merchantLower.includes('eneos')) {
+      return false;
+    }
+    if (conditions.includes('セブン-イレブン') && !merchantLower.includes('セブン') && !merchantLower.includes('seven')) {
+      return false;
+    }
+    if (conditions.includes('ローソン') && !merchantLower.includes('ローソン') && !merchantLower.includes('lawson')) {
+      return false;
+    }
+    if (conditions.includes('スターバックス') && !merchantLower.includes('スターバックス') && !merchantLower.includes('starbucks')) {
+      return false;
+    }
+    
+    return true;
   }
 
   private startLocationMonitoring(): void {
