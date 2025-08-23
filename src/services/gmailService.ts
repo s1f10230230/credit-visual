@@ -30,7 +30,7 @@ export interface CreditTransaction {
 class GmailService {
   private isGapiLoaded = false;
   private accessToken: string | null = null;
-  private CLIENT_ID = import.meta.env.VITE_GMAIL_CLIENT_ID;
+  private CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
   private DISCOVERY_DOC =
     "https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest";
   private SCOPES = "https://www.googleapis.com/auth/gmail.readonly";
