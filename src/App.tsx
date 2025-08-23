@@ -44,6 +44,7 @@ import { gmailService, CreditTransaction } from "./services/gmailService";
 import AdBanner from "./components/AdBanner";
 import OnboardingWizard from "./components/OnboardingWizard";
 import { notificationService } from "./services/notificationService";
+import { cardBillingService } from "./services/cardBillingService";
 
 type Transaction = CreditTransaction;
 
@@ -104,6 +105,8 @@ const App: React.FC = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [currentView, setCurrentView] = useState(0); // 0: Home, 1: Analysis, 2: Settings
   const [groupBy, setGroupBy] = useState("none");
+  const [viewMode, setViewMode] = useState<"all" | "monthly">("monthly"); // 月ごと表示がデフォルト
+  const [selectedMonth, setSelectedMonth] = useState<string>(""); // YYYY-MM形式
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [showAllTransactions, setShowAllTransactions] = useState(false);
@@ -137,6 +140,53 @@ const App: React.FC = () => {
     setTouchStart(0);
     setTouchEnd(0);
   };
+
+  // 月ごとのトランザクション取得
+  const getFilteredTransactions = (): Transaction[] => {
+    if (viewMode === "all") return transactions;
+
+    // 選択された月でフィルタリング
+    if (selectedMonth) {
+      return transactions.filter(transaction => {
+        const transactionDate = new Date(transaction.date);
+        const transactionMonth = `${transactionDate.getFullYear()}-${(transactionDate.getMonth() + 1).toString().padStart(2, '0')}`;
+        return transactionMonth === selectedMonth;
+      });
+    }
+
+    // デフォルトは今月
+    const currentMonth = new Date();
+    const currentMonthStr = `${currentMonth.getFullYear()}-${(currentMonth.getMonth() + 1).toString().padStart(2, '0')}`;
+    
+    return transactions.filter(transaction => {
+      const transactionDate = new Date(transaction.date);
+      const transactionMonth = `${transactionDate.getFullYear()}-${(transactionDate.getMonth() + 1).toString().padStart(2, '0')}`;
+      return transactionMonth === currentMonthStr;
+    });
+  };
+
+  // 利用可能な月のリスト取得
+  const getAvailableMonths = (): string[] => {
+    const months = new Set<string>();
+    
+    transactions.forEach(transaction => {
+      const transactionDate = new Date(transaction.date);
+      const monthStr = `${transactionDate.getFullYear()}-${(transactionDate.getMonth() + 1).toString().padStart(2, '0')}`;
+      months.add(monthStr);
+    });
+
+    return Array.from(months).sort().reverse(); // 新しい月が上に
+  };
+
+  // 初期選択月の設定
+  React.useEffect(() => {
+    if (!selectedMonth && transactions.length > 0) {
+      const availableMonths = getAvailableMonths();
+      if (availableMonths.length > 0) {
+        setSelectedMonth(availableMonths[0]); // 最新月を選択
+      }
+    }
+  }, [transactions, selectedMonth]);
 
   useEffect(() => {
     // オンボーディング完了状態をチェック
@@ -371,7 +421,7 @@ const App: React.FC = () => {
 
           {isMobile && currentView === 0 && (
             <Typography variant="caption" sx={{ mr: 2, opacity: 0.8 }}>
-              ¥{formatPrice(transactions.reduce((sum, tx) => sum + tx.amount, 0))}
+              ¥{formatPrice(getFilteredTransactions().reduce((sum, tx) => sum + tx.amount, 0))}
             </Typography>
           )}
 
@@ -423,7 +473,7 @@ const App: React.FC = () => {
                       color="primary"
                       sx={{ fontWeight: "bold" }}
                     >
-                      ¥{formatPrice(transactions.reduce((sum, tx) => sum + tx.amount, 0))}
+                      ¥{formatPrice(getFilteredTransactions().reduce((sum, tx) => sum + tx.amount, 0))}
                     </Typography>
                   </Grid>
                   <Grid>
@@ -456,7 +506,7 @@ const App: React.FC = () => {
                     最適化可能
                   </Typography>
                   <Typography variant="h6" color="info.main">
-                    ¥{formatPrice(Math.round(transactions.reduce((sum, tx) => sum + tx.amount, 0) * 0.02))}
+                    ¥{formatPrice(Math.round(getFilteredTransactions().reduce((sum, tx) => sum + tx.amount, 0) * 0.02))}
                   </Typography>
                 </CardContent>
               </Card>

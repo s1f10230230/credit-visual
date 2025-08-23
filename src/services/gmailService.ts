@@ -683,8 +683,23 @@ class GmailService {
         }
       }
 
-      console.log("Final transactions:", transactions);
-      return transactions.sort(
+      // 未来日付の取引を除外
+      const today = new Date();
+      today.setHours(23, 59, 59, 999); // 今日の終わりまで許可
+      
+      const validTransactions = transactions.filter(transaction => {
+        const transactionDate = new Date(transaction.date);
+        const isValidDate = transactionDate <= today;
+        
+        if (!isValidDate) {
+          console.log(`Filtering out future transaction: ${transaction.merchant} on ${transaction.date}`);
+        }
+        
+        return isValidDate;
+      });
+
+      console.log("Final transactions (after future date filter):", validTransactions);
+      return validTransactions.sort(
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
     } catch (error) {
