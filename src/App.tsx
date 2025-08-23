@@ -47,6 +47,15 @@ import { notificationService } from "./services/notificationService";
 
 type Transaction = CreditTransaction;
 
+// 価格フォーマット関数
+const formatPrice = (amount: number): string => {
+  return new Intl.NumberFormat('ja-JP', {
+    style: 'decimal',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount);
+};
+
 const sampleTransactions: Transaction[] = [
   {
     id: "1",
@@ -243,7 +252,7 @@ const App: React.FC = () => {
           return (
             <Box key={groupName} sx={{ mb: 3 }}>
               <Typography variant="h6" sx={{ mb: 1, color: "primary.main" }}>
-                {groupName} (¥{totalAmount.toLocaleString('ja-JP')})
+                {groupName} (¥{formatPrice(totalAmount)})
               </Typography>
               <List sx={{ bgcolor: "grey.50", borderRadius: 1 }}>
                 {groupTransactions.map((transaction, index) => (
@@ -279,7 +288,7 @@ const App: React.FC = () => {
           >
             <Typography variant="subtitle1">{transaction.merchant}</Typography>
             <Typography variant="h6" color="primary">
-              ¥{transaction.amount.toLocaleString('ja-JP')}
+              ¥{formatPrice(transaction.amount)}
             </Typography>
           </Box>
         }
@@ -362,10 +371,7 @@ const App: React.FC = () => {
 
           {isMobile && currentView === 0 && (
             <Typography variant="caption" sx={{ mr: 2, opacity: 0.8 }}>
-              ¥
-              {transactions
-                .reduce((sum, tx) => sum + tx.amount, 0)
-                .toLocaleString('ja-JP')}
+              ¥{formatPrice(transactions.reduce((sum, tx) => sum + tx.amount, 0))}
             </Typography>
           )}
 
@@ -417,10 +423,7 @@ const App: React.FC = () => {
                       color="primary"
                       sx={{ fontWeight: "bold" }}
                     >
-                      ¥
-                      {transactions
-                        .reduce((sum, tx) => sum + tx.amount, 0)
-                        .toLocaleString('ja-JP')}
+                      ¥{formatPrice(transactions.reduce((sum, tx) => sum + tx.amount, 0))}
                     </Typography>
                   </Grid>
                   <Grid>
@@ -434,38 +437,30 @@ const App: React.FC = () => {
               </CardContent>
             </Card>
 
-            <Grid container spacing={1}>
-              <Grid xs={6}>
-                <Card>
-                  <CardContent sx={{ py: 2, textAlign: "center" }}>
-                    <TrendingUp color="success" sx={{ fontSize: 40, mb: 1 }} />
-                    <Typography variant="body2" color="text.secondary">
-                      最高還元率
-                    </Typography>
-                    <Typography variant="h6" color="success.main">
-                      5.5%
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid xs={6}>
-                <Card>
-                  <CardContent sx={{ py: 2, textAlign: "center" }}>
-                    <TouchApp color="info" sx={{ fontSize: 40, mb: 1 }} />
-                    <Typography variant="body2" color="text.secondary">
-                      最適化可能
-                    </Typography>
-                    <Typography variant="h6" color="info.main">
-                      ¥
-                      {Math.round(
-                        transactions.reduce((sum, tx) => sum + tx.amount, 0) *
-                          0.02
-                      ).toLocaleString('ja-JP')}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
+            <Stack spacing={1}>
+              <Card>
+                <CardContent sx={{ py: 2, textAlign: "center" }}>
+                  <TrendingUp color="success" sx={{ fontSize: 40, mb: 1 }} />
+                  <Typography variant="body2" color="text.secondary">
+                    最高還元率
+                  </Typography>
+                  <Typography variant="h6" color="success.main">
+                    5.5%
+                  </Typography>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent sx={{ py: 2, textAlign: "center" }}>
+                  <TouchApp color="info" sx={{ fontSize: 40, mb: 1 }} />
+                  <Typography variant="body2" color="text.secondary">
+                    最適化可能
+                  </Typography>
+                  <Typography variant="h6" color="info.main">
+                    ¥{formatPrice(Math.round(transactions.reduce((sum, tx) => sum + tx.amount, 0) * 0.02))}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Stack>
           </Stack>
         )}
 
