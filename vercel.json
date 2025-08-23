@@ -4,10 +4,6 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "devCommand": "npm run dev",
-  "env": {
-    "VITE_GOOGLE_CLIENT_ID": "@vite_google_client_id",
-    "VITE_API_BASE_URL": "@vite_api_base_url"
-  },
   "headers": [
     {
       "source": "/(.*)",
