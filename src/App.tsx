@@ -550,12 +550,11 @@ const App: React.FC = () => {
                       </Button>
                     </Box>
 
-                    <Grid container spacing={2}>
+                    <Stack spacing={2}>
                       {(showAllTransactions
                         ? transactions
                         : transactions.slice(0, 4)
                       ).map((transaction) => (
-                        <Grid item xs={12} sm={6} key={transaction.id}>
                           <Card
                             elevation={1}
                             sx={{
@@ -586,7 +585,7 @@ const App: React.FC = () => {
                                   color="primary"
                                   sx={{ fontWeight: "bold" }}
                                 >
-                                  ¥{(transaction.amount / 1000).toFixed(0)}K
+                                  ¥{formatPrice(transaction.amount)}
                                 </Typography>
                               </Box>
 
@@ -645,9 +644,8 @@ const App: React.FC = () => {
                               )}
                             </CardContent>
                           </Card>
-                        </Grid>
                       ))}
-                    </Grid>
+                    </Stack>
                   </Stack>
                 ) : (
                   <List>
