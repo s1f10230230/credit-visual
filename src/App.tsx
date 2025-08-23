@@ -243,7 +243,7 @@ const App: React.FC = () => {
           return (
             <Box key={groupName} sx={{ mb: 3 }}>
               <Typography variant="h6" sx={{ mb: 1, color: "primary.main" }}>
-                {groupName} (¥{totalAmount.toLocaleString()})
+                {groupName} (¥{totalAmount.toLocaleString('ja-JP')})
               </Typography>
               <List sx={{ bgcolor: "grey.50", borderRadius: 1 }}>
                 {groupTransactions.map((transaction, index) => (
@@ -279,7 +279,7 @@ const App: React.FC = () => {
           >
             <Typography variant="subtitle1">{transaction.merchant}</Typography>
             <Typography variant="h6" color="primary">
-              ¥{transaction.amount.toLocaleString()}
+              ¥{transaction.amount.toLocaleString('ja-JP')}
             </Typography>
           </Box>
         }
@@ -365,7 +365,7 @@ const App: React.FC = () => {
               ¥
               {transactions
                 .reduce((sum, tx) => sum + tx.amount, 0)
-                .toLocaleString()}
+                .toLocaleString('ja-JP')}
             </Typography>
           )}
 
@@ -420,7 +420,7 @@ const App: React.FC = () => {
                       ¥
                       {transactions
                         .reduce((sum, tx) => sum + tx.amount, 0)
-                        .toLocaleString()}
+                        .toLocaleString('ja-JP')}
                     </Typography>
                   </Grid>
                   <Grid>
@@ -460,7 +460,7 @@ const App: React.FC = () => {
                       {Math.round(
                         transactions.reduce((sum, tx) => sum + tx.amount, 0) *
                           0.02
-                      ).toLocaleString()}
+                      ).toLocaleString('ja-JP')}
                     </Typography>
                   </CardContent>
                 </Card>
