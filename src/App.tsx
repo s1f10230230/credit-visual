@@ -26,6 +26,12 @@ import {
   useMediaQuery,
   Slide,
   IconButton,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  ToggleButton,
+  ToggleButtonGroup,
 } from "@mui/material";
 import {
   CreditCard,
@@ -45,6 +51,7 @@ import AdBanner from "./components/AdBanner";
 import OnboardingWizard from "./components/OnboardingWizard";
 import { notificationService } from "./services/notificationService";
 import { cardBillingService } from "./services/cardBillingService";
+import CardBillingSettingsDialog from "./components/CardBillingSettings";
 
 type Transaction = CreditTransaction;
 
@@ -110,6 +117,7 @@ const App: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [showAllTransactions, setShowAllTransactions] = useState(false);
+  const [showCardSettings, setShowCardSettings] = useState(false);
 
   // Swipe gesture handling for mobile
   const [touchStart, setTouchStart] = useState(0);
@@ -561,6 +569,60 @@ const App: React.FC = () => {
                   </Box>
                 </Box>
 
+                {/* ビューモードと月選択 */}
+                <Box sx={{ mb: 2 }}>
+                  <Stack 
+                    direction={isMobile ? "column" : "row"} 
+                    spacing={2} 
+                    alignItems={isMobile ? "stretch" : "center"}
+                  >
+                    <ToggleButtonGroup
+                      value={viewMode}
+                      exclusive
+                      onChange={(_, newMode) => newMode && setViewMode(newMode)}
+                      size="small"
+                    >
+                      <ToggleButton value="monthly">月ごと</ToggleButton>
+                      <ToggleButton value="all">全期間</ToggleButton>
+                    </ToggleButtonGroup>
+
+                    {viewMode === "monthly" && (
+                      <FormControl size="small" sx={{ minWidth: 140 }}>
+                        <InputLabel>表示月</InputLabel>
+                        <Select
+                          value={selectedMonth}
+                          label="表示月"
+                          onChange={(e) => setSelectedMonth(e.target.value)}
+                        >
+                          {getAvailableMonths().map((month) => {
+                            const [year, monthNum] = month.split('-');
+                            const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+                            const displayName = `${year}年${monthNames[parseInt(monthNum) - 1]}`;
+                            return (
+                              <MenuItem key={month} value={month}>
+                                {displayName}
+                              </MenuItem>
+                            );
+                          })}
+                        </Select>
+                      </FormControl>
+                    )}
+                  </Stack>
+                </Box>
+
+                {/* 請求期間詳細表示 */}
+                {viewMode === "monthly" && selectedMonth && (
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    <Typography variant="body2">
+                      <strong>表示期間:</strong> {selectedMonth.split('-')[0]}年{parseInt(selectedMonth.split('-')[1])}月
+                      <br />
+                      <strong>取引件数:</strong> {getFilteredTransactions().length}件
+                      <br />
+                      <strong>合計金額:</strong> ¥{formatPrice(getFilteredTransactions().reduce((sum, tx) => sum + tx.amount, 0))}
+                    </Typography>
+                  </Alert>
+                )}
+
                 <Typography
                   variant="body2"
                   color="text.secondary"
@@ -804,6 +866,18 @@ const App: React.FC = () => {
                 <Typography variant="h5" component="div" sx={{ mb: 2 }}>
                   設定
                 </Typography>
+                
+                <Stack spacing={2} sx={{ mb: 3 }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => setShowCardSettings(true)}
+                    startIcon={<CreditCard />}
+                  >
+                    カード別締め日・支払日設定
+                  </Button>
+                </Stack>
+
                 {!isMobile && (
                   <Button
                     variant="outlined"
@@ -981,6 +1055,15 @@ const App: React.FC = () => {
         isOpen={showOnboarding}
         onComplete={handleOnboardingComplete}
         onClose={handleOnboardingClose}
+      />
+
+      {/* カード設定ダイアログ */}
+      <CardBillingSettingsDialog
+        open={showCardSettings}
+        onClose={() => setShowCardSettings(false)}
+        onSave={() => {
+          // 設定保存後の処理（必要に応じて追加）
+        }}
       />
     </Box>
   );
