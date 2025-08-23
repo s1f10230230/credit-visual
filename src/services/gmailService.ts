@@ -24,6 +24,7 @@ export interface CreditTransaction {
   date: string;
   category: string;
   status: "confirmed" | "pending" | "unknown";
+  cardName?: string;
 }
 
 class GmailService {
