@@ -429,7 +429,7 @@ const App: React.FC = () => {
 
           {isMobile && currentView === 0 && (
             <Typography variant="caption" sx={{ mr: 2, opacity: 0.8 }}>
-              ¥{formatPrice(transactions.reduce((sum, tx) => sum + tx.amount, 0))}
+              ¥{formatPrice(getFilteredTransactions().reduce((sum, tx) => sum + tx.amount, 0))}
             </Typography>
           )}
 
@@ -481,7 +481,7 @@ const App: React.FC = () => {
                       color="primary"
                       sx={{ fontWeight: "bold" }}
                     >
-                      ¥{formatPrice(transactions.reduce((sum, tx) => sum + tx.amount, 0))}
+                      ¥{formatPrice(getFilteredTransactions().reduce((sum, tx) => sum + tx.amount, 0))}
                     </Typography>
                   </Grid>
                   <Grid>
@@ -514,7 +514,7 @@ const App: React.FC = () => {
                     最適化可能
                   </Typography>
                   <Typography variant="h6" color="info.main">
-                    ¥{formatPrice(Math.round(transactions.reduce((sum, tx) => sum + tx.amount, 0) * 0.02))}
+                    ¥{formatPrice(Math.round(getFilteredTransactions().reduce((sum, tx) => sum + tx.amount, 0) * 0.02))}
                   </Typography>
                 </CardContent>
               </Card>
@@ -569,8 +569,7 @@ const App: React.FC = () => {
                   </Box>
                 </Box>
 
-{/* コメントアウト: ビューモードと月選択 */}
-                {/*
+                {/* ビューモードと月選択 */}
                 <Box sx={{ mb: 2 }}>
                   <Stack 
                     direction={isMobile ? "column" : "row"} 
@@ -610,7 +609,6 @@ const App: React.FC = () => {
                     )}
                   </Stack>
                 </Box>
-                */}
 
 {/* コメントアウト: 請求期間詳細表示 */}
                 {/*
@@ -621,7 +619,7 @@ const App: React.FC = () => {
                       <br />
                       <strong>取引件数:</strong> {transactions.length}件
                       <br />
-                      <strong>合計金額:</strong> ¥{formatPrice(transactions.reduce((sum, tx) => sum + tx.amount, 0))}
+                      <strong>合計金額:</strong> ¥{formatPrice(getFilteredTransactions().reduce((sum, tx) => sum + tx.amount, 0))}
                     </Typography>
                   </Alert>
                 )}
@@ -871,8 +869,7 @@ const App: React.FC = () => {
                   設定
                 </Typography>
                 
-{/* コメントアウト: カード設定ボタン */}
-                {/*
+                {/* カード設定ボタン */}
                 <Stack spacing={2} sx={{ mb: 3 }}>
                   <Button
                     variant="contained"
@@ -883,7 +880,6 @@ const App: React.FC = () => {
                     カード別締め日・支払日設定
                   </Button>
                 </Stack>
-                */}
 
                 {!isMobile && (
                   <Button
@@ -1064,8 +1060,7 @@ const App: React.FC = () => {
         onClose={handleOnboardingClose}
       />
 
-{/* コメントアウト: カード設定ダイアログ */}
-      {/*
+      {/* カード設定ダイアログ */}
       <CardBillingSettingsDialog
         open={showCardSettings}
         onClose={() => setShowCardSettings(false)}
@@ -1073,7 +1068,6 @@ const App: React.FC = () => {
           // 設定保存後の処理（必要に応じて追加）
         }}
       />
-      */}
     </Box>
   );
 };
