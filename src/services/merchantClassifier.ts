@@ -339,6 +339,26 @@ class MerchantClassifier {
     return this.enhancedRuleClassification(info);
   }
 
+  // スニペットから加盟店名を抽出
+  private extractMerchantFromSnippet(snippet: string): string | null {
+    // 利用先パターンの抽出
+    const patterns = [
+      /■利用先[：:\s]*([^\n■]+)/,
+      /利用先[：:\s]*([^\n]+)/,
+      /ご利用店舗[：:\s]*([^\n]+)/,
+      /加盟店[：:\s]*([^\n]+)/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = snippet.match(pattern);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+    
+    return null;
+  }
+
   // 辞書ベース分類（新機能）
   private classifyByDictionary(info: ExtractedInfo): ClassifiedMerchant | null {
     // スニペットからの直接抽出
