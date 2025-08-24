@@ -118,6 +118,7 @@ const App: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [showCardSettings, setShowCardSettings] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Swipe gesture handling for mobile
   const [touchStart, setTouchStart] = useState(0);
@@ -155,11 +156,18 @@ const App: React.FC = () => {
 
     // 選択された月でフィルタリング
     if (selectedMonth) {
-      return transactions.filter(transaction => {
+      const filtered = transactions.filter(transaction => {
         const transactionDate = new Date(transaction.date);
         const transactionMonth = `${transactionDate.getFullYear()}-${(transactionDate.getMonth() + 1).toString().padStart(2, '0')}`;
+        
+        // デバッグログ
+        console.log(`Transaction: ${transaction.merchant}, Date: ${transaction.date}, Month: ${transactionMonth}, Selected: ${selectedMonth}, Match: ${transactionMonth === selectedMonth}`);
+        
         return transactionMonth === selectedMonth;
       });
+      
+      console.log(`Filtered ${filtered.length} transactions for ${selectedMonth}`);
+      return filtered;
     }
 
     // デフォルトは今月
@@ -300,6 +308,16 @@ const App: React.FC = () => {
       return acc;
     }, {} as Record<string, Transaction[]>);
 
+    const toggleGroupExpansion = (groupName: string) => {
+      const newExpanded = new Set(expandedGroups);
+      if (newExpanded.has(groupName)) {
+        newExpanded.delete(groupName);
+      } else {
+        newExpanded.add(groupName);
+      }
+      setExpandedGroups(newExpanded);
+    };
+
     return (
       <Box>
         {Object.entries(grouped).map(([groupName, groupTransactions]) => {
@@ -307,19 +325,39 @@ const App: React.FC = () => {
             (sum, t) => sum + t.amount,
             0
           );
+          const isExpanded = expandedGroups.has(groupName);
+          const displayTransactions = isExpanded ? groupTransactions : groupTransactions.slice(0, 3);
+          const hasMore = groupTransactions.length > 3;
+
           return (
             <Box key={groupName} sx={{ mb: 3 }}>
-              <Typography variant="h6" sx={{ mb: 1, color: "primary.main" }}>
-                {groupName} (¥{formatPrice(totalAmount)})
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="h6" sx={{ color: "primary.main" }}>
+                  {groupName} (¥{formatPrice(totalAmount)})
+                </Typography>
+                {hasMore && (
+                  <Button
+                    size="small"
+                    onClick={() => toggleGroupExpansion(groupName)}
+                    endIcon={isExpanded ? <ExpandLess /> : <ExpandMore />}
+                  >
+                    {isExpanded ? '閉じる' : `すべて見る(${groupTransactions.length}件)`}
+                  </Button>
+                )}
+              </Box>
               <List sx={{ bgcolor: "grey.50", borderRadius: 1 }}>
-                {groupTransactions.map((transaction, index) => (
+                {displayTransactions.map((transaction, index) => (
                   <React.Fragment key={transaction.id}>
                     {renderTransactionItem(transaction)}
-                    {index < groupTransactions.length - 1 && <Divider />}
+                    {index < displayTransactions.length - 1 && <Divider />}
                   </React.Fragment>
                 ))}
               </List>
+              {!isExpanded && hasMore && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                  他 {groupTransactions.length - 3} 件の取引があります
+                </Typography>
+              )}
             </Box>
           );
         })}
