@@ -50,6 +50,9 @@ import {
   Schedule,
   GetApp,
   Notifications as NotificationsIcon,
+  Add,
+  Edit,
+  Delete,
 } from "@mui/icons-material";
 import { gmailService, CreditTransaction } from "./services/gmailService";
 import AdBanner from "./components/AdBanner";
@@ -63,6 +66,8 @@ import BudgetManager from "./components/BudgetManager";
 import BillingAlerts from "./components/BillingAlerts";
 import ExportManager from "./components/ExportManager";
 import NotificationCenter from "./components/NotificationCenter";
+import TransactionEditor from "./components/TransactionEditor";
+import { overseasSubscriptionService } from "./services/overseasSubscriptionService";
 
 type Transaction = CreditTransaction;
 
@@ -186,6 +191,9 @@ const App: React.FC = () => {
   const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [showCardSettings, setShowCardSettings] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editorMode, setEditorMode] = useState<'add' | 'edit'>('add');
 
   // Swipe gesture handling for mobile
   const [touchStart, setTouchStart] = useState(0);
@@ -311,7 +319,9 @@ const App: React.FC = () => {
       console.log("Found transactions:", creditTransactions);
 
       if (creditTransactions.length > 0) {
-        setTransactions(creditTransactions);
+        // 海外サブスク検知を実行
+        const detectedTransactions = overseasSubscriptionService.detectOverseasSubscription(creditTransactions);
+        setTransactions(detectedTransactions);
         setError(
           `${creditTransactions.length}件のクレジット取引を取得しました`
         );
@@ -450,9 +460,25 @@ const App: React.FC = () => {
             }}
           >
             <Typography variant="subtitle1">{transaction.merchant}</Typography>
-            <Typography variant="h6" color="primary">
-              ¥{formatPrice(transaction.amount)}
-            </Typography>
+            <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+              <Typography variant="h6" color="primary">
+                ¥{formatPrice(transaction.amount)}
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={() => handleEditTransaction(transaction)}
+                sx={{ ml: 1 }}
+              >
+                <Edit fontSize="small" />
+              </IconButton>
+              <IconButton
+                size="small"
+                onClick={() => handleDeleteTransaction(transaction.id)}
+                color="error"
+              >
+                <Delete fontSize="small" />
+              </IconButton>
+            </Box>
           </Box>
         }
       />
@@ -494,14 +520,51 @@ const App: React.FC = () => {
     try {
       setLoading(true);
       const creditTransactions = await gmailService.getCreditTransactions();
-      setTransactions(
-        creditTransactions.length > 0 ? creditTransactions : sampleTransactions
-      );
+      const detectedTransactions = creditTransactions.length > 0 
+        ? overseasSubscriptionService.detectOverseasSubscription(creditTransactions)
+        : sampleTransactions;
+      setTransactions(detectedTransactions);
     } catch (err) {
       setError("取引の更新に失敗しました");
       console.error("Refresh transactions error:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Transaction management functions
+  const handleAddTransaction = () => {
+    setEditingTransaction(null);
+    setEditorMode('add');
+    setEditorOpen(true);
+  };
+
+  const handleEditTransaction = (transaction: Transaction) => {
+    setEditingTransaction(transaction);
+    setEditorMode('edit');
+    setEditorOpen(true);
+  };
+
+  const handleDeleteTransaction = (transactionId: string) => {
+    setTransactions(prev => prev.filter(tx => tx.id !== transactionId));
+  };
+
+  const handleSaveTransaction = (transaction: Transaction) => {
+    // 海外サブスク検知を実行
+    const detectedTransactions = overseasSubscriptionService.detectOverseasSubscription([transaction]);
+    const finalTransaction = detectedTransactions[0] || transaction;
+    
+    if (editorMode === 'add') {
+      setTransactions(prev => [...prev, finalTransaction]);
+    } else {
+      setTransactions(prev => prev.map(tx => tx.id === finalTransaction.id ? finalTransaction : tx));
+    }
+  };
+
+  const handleEditorDelete = () => {
+    if (editingTransaction) {
+      handleDeleteTransaction(editingTransaction.id);
+      setEditorOpen(false);
     }
   };
 
@@ -648,6 +711,14 @@ const App: React.FC = () => {
                     クレジット利用履歴
                   </Typography>
                   <Box sx={{ display: "flex", gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      onClick={handleAddTransaction}
+                      startIcon={<Add />}
+                      color="secondary"
+                    >
+                      手動追加
+                    </Button>
                     {gmailConnected && (
                       <Button
                         variant="outlined"
@@ -799,13 +870,34 @@ const App: React.FC = () => {
                                       "..."
                                     : transaction.merchant}
                                 </Typography>
-                                <Typography
-                                  variant="h6"
-                                  color="primary"
-                                  sx={{ fontWeight: "bold" }}
-                                >
-                                  ¥{formatPrice(transaction.amount)}
-                                </Typography>
+                                <Box sx={{ display: "flex", gap: 0.5, alignItems: "center" }}>
+                                  <Typography
+                                    variant="h6"
+                                    color="primary"
+                                    sx={{ fontWeight: "bold" }}
+                                  >
+                                    ¥{formatPrice(transaction.amount)}
+                                  </Typography>
+                                  <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditTransaction(transaction);
+                                    }}
+                                  >
+                                    <Edit fontSize="small" />
+                                  </IconButton>
+                                  <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteTransaction(transaction.id);
+                                    }}
+                                    color="error"
+                                  >
+                                    <Delete fontSize="small" />
+                                  </IconButton>
+                                </Box>
                               </Box>
 
                               <Box
@@ -980,6 +1072,23 @@ const App: React.FC = () => {
                   >
                     通知・アラート設定
                   </Button>
+
+                  <Button
+                    variant="outlined"
+                    color="info"
+                    startIcon={<AccountBalance />}
+                    onClick={() => {
+                      // スクロールして為替レート設定を表示
+                      setTimeout(() => {
+                        const exchangeSection = document.getElementById('exchange-section');
+                        if (exchangeSection) {
+                          exchangeSection.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }, 100);
+                    }}
+                  >
+                    為替レート設定
+                  </Button>
                 </Stack>
 
                 {/* 支払いアラート機能 */}
@@ -999,6 +1108,64 @@ const App: React.FC = () => {
                     通知・アラート設定
                   </Typography>
                   <NotificationCenter transactions={transactions.map(convertToAnalyticsTransaction)} />
+                </Box>
+
+                {/* 為替レート設定 */}
+                <Box id="exchange-section" sx={{ mt: 4 }}>
+                  <Typography variant="h6" gutterBottom>
+                    為替レート設定
+                  </Typography>
+                  <Card>
+                    <CardContent>
+                      <Stack spacing={2}>
+                        <Typography variant="body2" color="text.secondary">
+                          海外サブスクリプションの検知や外貨建て取引の正確な金額表示のために、為替レートを設定できます。
+                        </Typography>
+                        
+                        <Grid container spacing={2}>
+                          {['USD', 'EUR', 'GBP', 'KRW', 'CNY'].map((currency) => (
+                            <Grid item xs={12} sm={6} md={4} key={currency}>
+                              <Card variant="outlined">
+                                <CardContent sx={{ py: 2 }}>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Typography variant="subtitle2">
+                                      1 {currency} = 
+                                    </Typography>
+                                    <Typography variant="h6" color="primary">
+                                      {currency === 'USD' ? '150' : 
+                                       currency === 'EUR' ? '165' : 
+                                       currency === 'GBP' ? '190' :
+                                       currency === 'KRW' ? '0.11' : '21'} 円
+                                    </Typography>
+                                  </Box>
+                                  <Typography variant="caption" color="text.secondary">
+                                    概算レート使用中
+                                  </Typography>
+                                </CardContent>
+                              </Card>
+                            </Grid>
+                          ))}
+                        </Grid>
+
+                        <Alert severity="info">
+                          <Typography variant="body2">
+                            現在は概算レートを使用しています。より正確な換算には、リアルタイム為替レートAPIの実装を検討してください。
+                          </Typography>
+                        </Alert>
+
+                        <Box>
+                          <Typography variant="subtitle2" gutterBottom>
+                            検知された海外サブスクリプション統計
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            総件数: {overseasSubscriptionService.getDetectionStats().totalDetected}件<br/>
+                            月額合計: ¥{overseasSubscriptionService.getDetectionStats().totalMonthlyCost.jpy} 
+                            (${overseasSubscriptionService.getDetectionStats().totalMonthlyCost.usd})
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </CardContent>
+                  </Card>
                 </Box>
 
                 {!isMobile && (
@@ -1165,10 +1332,9 @@ const App: React.FC = () => {
             right: 16,
             zIndex: 1001,
           }}
-          onClick={handleGmailConnect}
-          disabled={loading}
+          onClick={handleAddTransaction}
         >
-          {loading ? <CircularProgress size={24} color="inherit" /> : <Email />}
+          <Add />
         </Fab>
       )}
 
@@ -1189,6 +1355,16 @@ const App: React.FC = () => {
         onSave={() => {
           // 設定保存後の処理（必要に応じて追加）
         }}
+      />
+
+      {/* トランザクション編集ダイアログ */}
+      <TransactionEditor
+        open={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        onSave={handleSaveTransaction}
+        onDelete={editorMode === 'edit' ? handleEditorDelete : undefined}
+        transaction={editingTransaction}
+        mode={editorMode}
       />
     </Box>
   );
