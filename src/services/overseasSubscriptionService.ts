@@ -114,11 +114,13 @@ class OverseasSubscriptionService {
 
   // 海外利用からサブスクを検知
   detectOverseasSubscription(transactions: ExtendedCreditTransaction[]): ExtendedCreditTransaction[] {
-    const overseasTransactions = transactions.filter(tx => 
-      this.isOverseasTransaction(tx)
-    );
+    return transactions.map(tx => {
+      // 海外取引でない場合はそのまま返す
+      if (!this.isOverseasTransaction(tx)) {
+        return tx;
+      }
 
-    return overseasTransactions.map(tx => {
+      // 海外取引の場合は分析を実行
       const detection = this.analyzeOverseasTransaction(tx);
       if (detection.isSubscription) {
         return {
@@ -133,7 +135,12 @@ class OverseasSubscriptionService {
           merchant: detection.detectedService || tx.merchant,
         };
       }
-      return tx;
+      
+      // 海外取引だがサブスクでない場合
+      return {
+        ...tx,
+        isOverseas: true,
+      };
     });
   }
 
