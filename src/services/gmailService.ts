@@ -242,7 +242,7 @@ class GmailService {
   }
 
   async getEmails(
-    query: string = 'subject:ご利用',
+    query: string = 'subject:(ご利用 OR カード OR クレジット OR 利用明細 OR お支払い) OR from:(card OR credit)',
     maxResults: number = 50
   ): Promise<EmailData[]> {
     await this.initializeGapi();
