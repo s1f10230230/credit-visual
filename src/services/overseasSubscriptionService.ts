@@ -154,20 +154,20 @@ class OverseasSubscriptionService {
     confidence: number;
     detectedService?: string;
   } {
-    // 1. 金額パターンからサービス推定
-    const serviceMatch = this.matchServiceByAmount(tx.amount);
+    // 1. 金額パターンからサービス推定（加盟店名も考慮）
+    const serviceMatch = this.matchServiceByAmount(tx.amount, tx.merchant);
     if (serviceMatch) {
       return {
         isSubscription: true,
         currency: serviceMatch.currency,
         originalAmount: serviceMatch.amount,
         exchangeRate: tx.amount / serviceMatch.amount,
-        confidence: 0.8,
+        confidence: 0.9, // 加盟店名も一致した場合は信頼度を上げる
         detectedService: serviceMatch.name,
       };
     }
 
-    // 2. 定期性チェック
+    // 2. 定期性チェック（2回目以降の取引のみ）
     const isRecurring = this.checkRecurringPattern(tx);
     if (isRecurring) {
       // 一般的なUSD換算で推定
@@ -177,7 +177,7 @@ class OverseasSubscriptionService {
         currency: 'USD',
         originalAmount: estimatedUSD,
         exchangeRate: 150,
-        confidence: 0.6,
+        confidence: 0.7, // 定期性が確認された場合は信頼度を上げる
       };
     }
 
@@ -191,15 +191,27 @@ class OverseasSubscriptionService {
   }
 
   // 金額からサービスマッチング
-  private matchServiceByAmount(jpyAmount: number): OverseasServiceTemplate | null {
+  private matchServiceByAmount(jpyAmount: number, merchant: string = ''): OverseasServiceTemplate | null {
     for (const service of OVERSEAS_SERVICES) {
       const estimatedRate = ESTIMATED_EXCHANGE_RATES[service.currency] || 150;
       const estimatedJPY = service.amount * estimatedRate;
       
       // 為替変動を考慮した範囲マッチング（±10%）
       const tolerance = estimatedJPY * 0.1;
-      if (Math.abs(jpyAmount - estimatedJPY) <= tolerance) {
-        return service;
+      const isAmountMatch = Math.abs(jpyAmount - estimatedJPY) <= tolerance;
+      
+      if (isAmountMatch) {
+        // 金額が合致した場合、加盟店名もチェック
+        const isMerchantMatch = service.commonMerchantNames.some(name =>
+          merchant.toUpperCase().includes(name.toUpperCase())
+        );
+        
+        // 加盟店名が一致する場合のみ返す
+        if (isMerchantMatch) {
+          return service;
+        }
+        
+        console.log(`Amount matches ${service.name} but merchant "${merchant}" doesn't match expected names:`, service.commonMerchantNames);
       }
     }
     return null;
