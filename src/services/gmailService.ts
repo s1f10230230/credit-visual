@@ -25,6 +25,8 @@ export interface CreditTransaction {
   category: string;
   status: "confirmed" | "pending" | "unknown";
   cardName?: string;
+  isSubscription?: boolean; // Classifier判定結果を保持
+  confidence?: number; // 分類の信頼度
 }
 
 class GmailService {
@@ -657,6 +659,8 @@ class GmailService {
         date: transactionDate,
         category,
         status: amount > 0 ? "confirmed" : "unknown",
+        isSubscription: classifiedMerchant.is_subscription, // Classifierの判定結果を保存
+        confidence: classifiedMerchant.confidence,
       };
     } catch (error) {
       console.error("Error parsing credit notification:", error);

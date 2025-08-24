@@ -1,0 +1,208 @@
+{
+  "streaming_video": {
+    "Netflix": {
+      "officialUrl": "https://www.netflix.com/jp/",
+      "cancellationUrl": "https://help.netflix.com/ja/node/407",
+      "steps": [
+        "Netflixにサインイン",
+        "「アカウント」→「メンバーシップのキャンセル」",
+        "キャンセルの確認"
+      ],
+      "notes": "いつでもキャンセル可能。請求日まで利用可能"
+    },
+    "Amazon Prime Video": {
+      "officialUrl": "https://www.amazon.co.jp/prime/",
+      "cancellationUrl": "https://www.amazon.co.jp/gp/help/customer/display.html?nodeId=201430600",
+      "steps": [
+        "Amazonアカウントにサインイン",
+        "「プライム会員情報」→「プライム会員情報を変更する」",
+        "「プライム会員資格を終了する」"
+      ],
+      "notes": "残り期間は利用可能"
+    },
+    "Disney+": {
+      "officialUrl": "https://www.disneyplus.com/",
+      "cancellationUrl": "https://help.disneyplus.com/",
+      "steps": [
+        "Disney+アカウントにログイン",
+        "「アカウント」→「サブスクリプション」",
+        "「キャンセル」を選択"
+      ]
+    },
+    "Hulu": {
+      "officialUrl": "https://www.hulu.jp/",
+      "cancellationUrl": "https://help.hulu.jp/faq/解約-手続き",
+      "steps": [
+        "Huluにログイン",
+        "「アカウント」→「契約を解約する」",
+        "解約理由を選択して確認"
+      ]
+    },
+    "U-NEXT": {
+      "officialUrl": "https://video.unext.jp/",
+      "cancellationUrl": "https://help.unext.jp/guide/detail/how-to-cancel-subscription",
+      "steps": [
+        "U-NEXTにログイン",
+        "「設定・サポート」→「契約内容の確認・変更」",
+        "「解約はこちら」→「次へ」"
+      ]
+    },
+    "ABEMAプレミアム": {
+      "officialUrl": "https://abema.tv/",
+      "cancellationUrl": "https://help.abema.tv/hc/ja/articles/360001203167",
+      "steps": [
+        "ABEMA にログイン",
+        "「視聴プラン」→「解約に進む」",
+        "「解約する」を選択"
+      ]
+    }
+  },
+  "streaming_music": {
+    "Spotify": {
+      "officialUrl": "https://www.spotify.com/jp/",
+      "cancellationUrl": "https://support.spotify.com/jp/article/how-to-cancel-your-spotify-subscription/",
+      "steps": [
+        "Spotify アカウントページにアクセス",
+        "「サブスクリプション」→「プランを変更」",
+        "「Spotify Free」を選択"
+      ]
+    },
+    "Apple Music": {
+      "officialUrl": "https://music.apple.com/jp/",
+      "cancellationUrl": "https://support.apple.com/ja-jp/108036",
+      "steps": [
+        "iOSの場合：「設定」→「Apple ID」→「サブスクリプション」",
+        "Apple Music を選択",
+        "「サブスクリプションをキャンセルする」"
+      ]
+    },
+    "YouTube Premium": {
+      "officialUrl": "https://www.youtube.com/premium",
+      "cancellationUrl": "https://support.google.com/youtube/answer/6308278",
+      "steps": [
+        "YouTube にアクセス",
+        "「購入とメンバーシップ」→「YouTube Premium」",
+        "「解約」を選択"
+      ]
+    },
+    "LINE MUSIC": {
+      "officialUrl": "https://music.line.me/",
+      "cancellationUrl": "https://help.line.me/line/android/categoryId/20000378/3/pc",
+      "steps": [
+        "LINE MUSIC アプリを開く",
+        "「ライブラリ」→「設定」→「チケット管理」",
+        "「自動更新をオフにする」"
+      ]
+    }
+  },
+  "software_cloud": {
+    "Adobe Creative Cloud": {
+      "officialUrl": "https://www.adobe.com/jp/",
+      "cancellationUrl": "https://helpx.adobe.com/jp/manage-account/using/cancel-subscription.html",
+      "steps": [
+        "Adobe アカウントページにサインイン",
+        "「プランの管理」→「プランをキャンセル」",
+        "キャンセル理由を選択して確認"
+      ],
+      "notes": "年間プランの場合、解約手数料が発生する場合があります"
+    },
+    "Microsoft 365": {
+      "officialUrl": "https://www.microsoft.com/ja-jp/microsoft-365",
+      "cancellationUrl": "https://support.microsoft.com/ja-jp/office/cancel-microsoft-365",
+      "steps": [
+        "Microsoft アカウントにサインイン",
+        "「サービスとサブスクリプション」を選択",
+        "Microsoft 365 の「管理」→「キャンセル」"
+      ]
+    },
+    "Google One": {
+      "officialUrl": "https://one.google.com/",
+      "cancellationUrl": "https://support.google.com/googleone/answer/9312290",
+      "steps": [
+        "Google One にアクセス",
+        "「設定」→「メンバーシップをキャンセル」",
+        "「メンバーシップをキャンセル」を確認"
+      ]
+    },
+    "Dropbox": {
+      "officialUrl": "https://www.dropbox.com/",
+      "cancellationUrl": "https://help.dropbox.com/account/cancel-subscription",
+      "steps": [
+        "Dropbox にサインイン",
+        "「設定」→「プラン」→「プランをキャンセル」",
+        "理由を選択して確認"
+      ]
+    }
+  },
+  "telecom_carriers": {
+    "NTTドコモ": {
+      "officialUrl": "https://www.docomo.ne.jp/",
+      "cancellationUrl": "https://www.docomo.ne.jp/support/procedure/cancel/",
+      "steps": [
+        "最寄りのドコモショップに来店",
+        "本人確認書類を持参",
+        "解約手続きを実施"
+      ],
+      "notes": "オンラインでのMNP手続きも可能"
+    },
+    "au (KDDI)": {
+      "officialUrl": "https://www.au.com/",
+      "cancellationUrl": "https://www.au.com/support/service/mobile/procedure/contract/cancel/",
+      "steps": [
+        "最寄りのauショップに来店",
+        "本人確認書類を持参",
+        "解約手続きを実施"
+      ]
+    },
+    "SoftBank": {
+      "officialUrl": "https://www.softbank.jp/",
+      "cancellationUrl": "https://www.softbank.jp/support/faq/view/10159",
+      "steps": [
+        "最寄りのソフトバンクショップに来店",
+        "本人確認書類を持参",
+        "解約手続きを実施"
+      ]
+    }
+  },
+  "ai_tools": {
+    "ChatGPT Plus": {
+      "officialUrl": "https://chat.openai.com/",
+      "cancellationUrl": "https://help.openai.com/en/articles/8264644-how-do-i-cancel-chatgpt-plus",
+      "steps": [
+        "ChatGPT にログイン",
+        "「Settings & Beta」→「Manage my subscription」",
+        "「Cancel plan」を選択"
+      ]
+    },
+    "Claude Pro": {
+      "officialUrl": "https://claude.ai/",
+      "cancellationUrl": "https://support.anthropic.com/",
+      "steps": [
+        "Claude にログイン",
+        "設定メニューから「Subscription」",
+        "「Cancel subscription」を選択"
+      ]
+    },
+    "GitHub Copilot": {
+      "officialUrl": "https://github.com/features/copilot",
+      "cancellationUrl": "https://docs.github.com/en/billing/managing-billing-for-github-copilot",
+      "steps": [
+        "GitHub にログイン",
+        "「Settings」→「Billing and plans」",
+        "「GitHub Copilot」→「Cancel subscription」"
+      ]
+    }
+  },
+  "fitness_health": {
+    "スポーツジム": {
+      "officialUrl": "#",
+      "cancellationUrl": "#",
+      "steps": [
+        "ジムのフロントに相談",
+        "解約申込書を記入",
+        "規定に従い手続き完了"
+      ],
+      "notes": "多くのジムで1〜2ヶ月前の事前通告が必要"
+    }
+  }
+}

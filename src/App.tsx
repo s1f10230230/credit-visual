@@ -73,6 +73,11 @@ type Transaction = CreditTransaction;
 
 // トランザクションデータを analyticsService 用に変換
 const convertToAnalyticsTransaction = (tx: Transaction): import('./services/analyticsService').CreditTransaction => {
+  // Classifierの判定結果を優先し、フォールバックとして従来ロジックを使用
+  const isSubscription = tx.isSubscription !== undefined 
+    ? tx.isSubscription 
+    : (tx.category === "サブスク" || /netflix|spotify|prime|subscription/i.test(tx.merchant));
+  
   return {
     id: tx.id,
     amount: tx.amount,
@@ -81,9 +86,9 @@ const convertToAnalyticsTransaction = (tx: Transaction): import('./services/anal
     merchant: tx.merchant,
     category: tx.category,
     platform: tx.cardName || "unknown",
-    is_subscription: tx.category === "サブスク" || /netflix|spotify|prime|subscription/i.test(tx.merchant),
-    confidence: 0.8,
-    evidence: `Category: ${tx.category}`,
+    is_subscription: isSubscription, // Classifierの判定結果を優先
+    confidence: tx.confidence || 0.8,
+    evidence: tx.isSubscription !== undefined ? "Classifier detection" : `Category: ${tx.category}`,
     notes: tx.status || "",
     needsReview: tx.status === "unknown",
     pending: tx.status === "pending",

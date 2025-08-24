@@ -21,6 +21,14 @@ import {
   LinearProgress,
   useTheme,
   useMediaQuery,
+  Switch,
+  FormControlLabel,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Link,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -29,9 +37,15 @@ import {
   TrendingDown as TrendingDownIcon,
   Savings as SavingsIcon,
   Schedule as ScheduleIcon,
+  ThumbUp as ThumbUpIcon,
+  ThumbDown as ThumbDownIcon,
+  Cancel as CancelIcon,
+  Launch as LaunchIcon,
 } from '@mui/icons-material';
 import { CreditTransaction } from '../services/analyticsService';
 import { analyticsService } from '../services/analyticsService';
+import { cancellationGuideService } from '../services/cancellationGuideService';
+import { duplicateServiceDetector } from '../services/duplicateServiceDetector';
 
 interface SubscriptionDashboardProps {
   transactions: CreditTransaction[];
@@ -42,11 +56,48 @@ const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ transacti
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [subscriptionAnalysis, setSubscriptionAnalysis] = useState<any>(null);
   const [expanded, setExpanded] = useState<string | false>(false);
+  // ユーザー補正データのstate
+  const [userCorrections, setUserCorrections] = useState<Map<string, boolean>>(new Map());
+  // 解約ガイドモーダルのstate
+  const [guideModalOpen, setGuideModalOpen] = useState(false);
+  const [selectedService, setSelectedService] = useState<any>(null);
+  // 重複サービス検出のstate
+  const [duplicateAnalysis, setDuplicateAnalysis] = useState<any>(null);
 
   useEffect(() => {
     const analysis = analyticsService.analyzeSubscriptions(transactions);
     setSubscriptionAnalysis(analysis);
+    
+    // 重複サービス分析を実行
+    const duplicationAnalysis = duplicateServiceDetector.analyzeSubscriptions(transactions);
+    setDuplicateAnalysis(duplicationAnalysis);
+    
+    // ローカルストレージからユーザー補正データを読み込み
+    const storedCorrections = localStorage.getItem('subscriptionCorrections');
+    if (storedCorrections) {
+      try {
+        const parsed = JSON.parse(storedCorrections);
+        setUserCorrections(new Map(Object.entries(parsed)));
+      } catch (error) {
+        console.error('Failed to load user corrections:', error);
+      }
+    }
   }, [transactions]);
+
+  // ユーザー補正を処理する関数
+  const handleSubscriptionToggle = (merchantName: string, isSubscription: boolean) => {
+    const newCorrections = new Map(userCorrections);
+    newCorrections.set(merchantName, isSubscription);
+    setUserCorrections(newCorrections);
+    
+    // ローカルストレージに保存
+    const correctionsObj = Object.fromEntries(newCorrections);
+    localStorage.setItem('subscriptionCorrections', JSON.stringify(correctionsObj));
+    
+    // 即座に分析を再実行して画面を更新
+    const updatedAnalysis = analyticsService.analyzeSubscriptions(transactions, newCorrections);
+    setSubscriptionAnalysis(updatedAnalysis);
+  };
 
   const handleChange = (panel: string) => (event: React.SyntheticEvent, isExpanded: boolean) => {
     setExpanded(isExpanded ? panel : false);
@@ -62,6 +113,92 @@ const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ transacti
     if (monthlyCost > 3000) return 'error';
     if (monthlyCost > 1000) return 'warning';
     return 'success';
+  };
+
+  // 推定周期を取得
+  const getEstimatedPeriod = (subscription: any): string => {
+    if (subscription.transactions && subscription.transactions.length >= 2) {
+      const dates = subscription.transactions.map((tx: any) => new Date(tx.date)).sort((a, b) => a.getTime() - b.getTime());
+      const intervals = [];
+      
+      for (let i = 1; i < dates.length; i++) {
+        const days = Math.round((dates[i].getTime() - dates[i-1].getTime()) / (1000 * 60 * 60 * 24));
+        intervals.push(days);
+      }
+      
+      const avgInterval = intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
+      
+      if (avgInterval >= 25 && avgInterval <= 35) return `月次 (平均${Math.round(avgInterval)}日)`;
+      if (avgInterval >= 85 && avgInterval <= 95) return `四半期 (平均${Math.round(avgInterval)}日)`;
+      if (avgInterval >= 350 && avgInterval <= 380) return `年次 (平均${Math.round(avgInterval)}日)`;
+      return `不定期 (平均${Math.round(avgInterval)}日)`;
+    }
+    
+    // 頻度から推定
+    if (subscription.frequency >= 10) return '月次 (推定)';
+    if (subscription.frequency >= 3) return '四半期 (推定)';
+    return '不定期';
+  };
+
+  // 年間支出見込みを計算
+  const calculateYearlyEstimate = (subscription: any): number => {
+    const period = getEstimatedPeriod(subscription);
+    let multiplier = 12; // デフォルト月次
+    
+    if (period.includes('四半期')) multiplier = 4;
+    if (period.includes('年次')) multiplier = 1;
+    if (period.includes('不定期')) multiplier = subscription.frequency; // 実績ベース
+    
+    return Math.round(subscription.averageAmount * multiplier);
+  };
+
+  // 次回課金予定日を計算
+  const getNextBillingDate = (subscription: any): string | null => {
+    if (!subscription.transactions || subscription.transactions.length < 2) return null;
+    
+    const lastTransaction = subscription.transactions[subscription.transactions.length - 1];
+    const lastDate = new Date(lastTransaction.date);
+    const period = getEstimatedPeriod(subscription);
+    
+    let nextDate: Date;
+    if (period.includes('月次')) {
+      nextDate = new Date(lastDate);
+      nextDate.setMonth(nextDate.getMonth() + 1);
+    } else if (period.includes('四半期')) {
+      nextDate = new Date(lastDate);
+      nextDate.setMonth(nextDate.getMonth() + 3);
+    } else if (period.includes('年次')) {
+      nextDate = new Date(lastDate);
+      nextDate.setFullYear(nextDate.getFullYear() + 1);
+    } else {
+      return null; // 不定期は予測しない
+    }
+    
+    return nextDate.toLocaleDateString('ja-JP');
+  };
+
+  // 次回課金まで日数を計算
+  const getDaysUntilNext = (subscription: any): number => {
+    const nextBillingStr = getNextBillingDate(subscription);
+    if (!nextBillingStr) return 0;
+    
+    const nextBilling = new Date(nextBillingStr.replace(/\//g, '-'));
+    const today = new Date();
+    const diffTime = nextBilling.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return Math.max(0, diffDays);
+  };
+
+  // 解約ガイドを表示
+  const showCancellationGuide = (subscription: any) => {
+    setSelectedService(subscription);
+    setGuideModalOpen(true);
+  };
+
+  // 解約ガイド情報を取得
+  const getCancellationGuide = (serviceName: string) => {
+    return cancellationGuideService.getGuide(serviceName);
   };
 
   const totalPotentialSavings = subscriptionAnalysis.savingOpportunities.reduce(
@@ -179,6 +316,24 @@ const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ transacti
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} alignItems="center">
+                <Tooltip title="これはサブスクですか？">
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        size="small"
+                        checked={userCorrections.get(subscription.merchant) ?? subscription.isSubscription}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handleSubscriptionToggle(subscription.merchant, e.target.checked);
+                        }}
+                        color="primary"
+                      />
+                    }
+                    label=""
+                    onClick={(e) => e.stopPropagation()}
+                    sx={{ m: 0 }}
+                  />
+                </Tooltip>
                 <Chip
                   label={formatCurrency(subscription.averageAmount)}
                   color={getSeverityColor(subscription.averageAmount)}
@@ -210,7 +365,61 @@ const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ transacti
                     {formatCurrency(subscription.averageAmount)}
                   </Typography>
                 </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="body2" color="text.secondary">
+                    推定周期
+                  </Typography>
+                  <Typography variant="h6">
+                    {getEstimatedPeriod(subscription)}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="body2" color="text.secondary">
+                    年間支出見込み
+                  </Typography>
+                  <Typography variant="h6" color="warning.main">
+                    {formatCurrency(calculateYearlyEstimate(subscription))}
+                  </Typography>
+                </Grid>
+                {getNextBillingDate(subscription) && (
+                  <Grid item xs={12}>
+                    <Typography variant="body2" color="text.secondary">
+                      次回課金予定日
+                    </Typography>
+                    <Typography variant="body1" color="primary.main">
+                      📅 {getNextBillingDate(subscription)} ({getDaysUntilNext(subscription)}日後)
+                    </Typography>
+                  </Grid>
+                )}
               </Grid>
+
+              {/* 解約ガイド */}
+              <Box sx={{ mt: 2, mb: 2 }}>
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  size="small"
+                  startIcon={<CancelIcon />}
+                  endIcon={<LaunchIcon />}
+                  onClick={() => showCancellationGuide(subscription)}
+                  sx={{ mr: 1 }}
+                >
+                  解約ガイド
+                </Button>
+                {getCancellationGuide(subscription.merchant) && (
+                  <Button
+                    variant="text"
+                    size="small"
+                    startIcon={<LaunchIcon />}
+                    onClick={() => {
+                      const guide = getCancellationGuide(subscription.merchant);
+                      if (guide) window.open(guide.officialUrl, '_blank');
+                    }}
+                  >
+                    公式サイト
+                  </Button>
+                )}
+              </Box>
 
               {/* 最近の取引 */}
               <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>
@@ -235,6 +444,81 @@ const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ transacti
           </AccordionDetails>
         </Accordion>
       ))}
+
+      {/* 重複サービス検出 */}
+      {duplicateAnalysis && duplicateAnalysis.duplicateGroups.length > 0 && (
+        <Card sx={{ mb: 3, border: '2px solid', borderColor: 'info.light' }}>
+          <CardContent>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
+              <WarningIcon color="info" />
+              <Typography variant="h6">
+                重複サービスの検出
+              </Typography>
+              <Chip
+                label={`月額${formatCurrency(duplicateAnalysis.totalWastedAmount)}の節約可能`}
+                color="info"
+                size="small"
+              />
+            </Stack>
+            
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              同じカテゴリのサービスを複数契約しています。不要なサービスの解約をご検討ください。
+            </Typography>
+
+            {duplicateAnalysis.duplicateGroups.map((group: any, index: number) => (
+              <Accordion key={index} sx={{ mb: 1 }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="subtitle1">{group.categoryDisplayName}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {group.services.length}つのサービス • 合計{formatCurrency(group.totalMonthlyCost)}/月
+                      </Typography>
+                    </Box>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Chip
+                        label={group.priority === 'high' ? '高優先' : group.priority === 'medium' ? '中優先' : '低優先'}
+                        color={group.priority === 'high' ? 'error' : group.priority === 'medium' ? 'warning' : 'default'}
+                        size="small"
+                      />
+                      <Chip
+                        label={`${formatCurrency(group.potentialSavings)}節約可能`}
+                        color="success"
+                        size="small"
+                      />
+                    </Stack>
+                  </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Typography variant="body2" sx={{ mb: 2 }}>
+                    {group.recommendedAction}
+                  </Typography>
+                  
+                  <List dense>
+                    {group.services.map((service: any, serviceIndex: number) => (
+                      <ListItem key={serviceIndex}>
+                        <ListItemText
+                          primary={
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <Typography variant="body1">{service.merchantName}</Typography>
+                              <Chip
+                                label={service.isRecommendedToKeep ? '推奨保持' : '解約検討'}
+                                color={service.isRecommendedToKeep ? 'success' : 'warning'}
+                                size="small"
+                              />
+                            </Box>
+                          }
+                          secondary={`${formatCurrency(service.monthlyCost)}/月 • 使用頻度: ${service.usage === 'high' ? '高' : service.usage === 'medium' ? '中' : '低'} • ${service.reason}`}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </AccordionDetails>
+              </Accordion>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* 節約提案 */}
       {subscriptionAnalysis.savingOpportunities.length > 0 && (
@@ -308,6 +592,128 @@ const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ transacti
           </Box>
         </CardContent>
       </Card>
+
+      {/* 解約ガイドモーダル */}
+      <Dialog
+        open={guideModalOpen}
+        onClose={() => setGuideModalOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        {selectedService && (
+          <>
+            <DialogTitle>
+              <Box display="flex" alignItems="center">
+                <CancelIcon sx={{ mr: 1 }} />
+                {selectedService.merchant} の解約ガイド
+              </Box>
+            </DialogTitle>
+            <DialogContent>
+              {(() => {
+                const guide = getCancellationGuide(selectedService.merchant);
+                if (guide) {
+                  return (
+                    <Box>
+                      <Grid container spacing={2} sx={{ mb: 2 }}>
+                        <Grid item xs={6}>
+                          <Typography variant="body2" color="text.secondary">
+                            カテゴリ
+                          </Typography>
+                          <Typography variant="body1">{guide.category}</Typography>
+                        </Grid>
+                        <Grid item xs={6}>
+                          <Typography variant="body2" color="text.secondary">
+                            推定所要時間
+                          </Typography>
+                          <Typography variant="body1">{guide.estimatedTime}</Typography>
+                        </Grid>
+                        <Grid item xs={6}>
+                          <Typography variant="body2" color="text.secondary">
+                            難易度
+                          </Typography>
+                          <Chip 
+                            label={guide.difficulty === 'easy' ? '簡単' : guide.difficulty === 'medium' ? '普通' : '困難'}
+                            color={guide.difficulty === 'easy' ? 'success' : guide.difficulty === 'medium' ? 'warning' : 'error'}
+                            size="small"
+                          />
+                        </Grid>
+                      </Grid>
+
+                      <Typography variant="h6" gutterBottom>
+                        解約手順
+                      </Typography>
+                      <List>
+                        {guide.steps.map((step, index) => (
+                          <ListItem key={index}>
+                            <ListItemText
+                              primary={`${index + 1}. ${step}`}
+                            />
+                          </ListItem>
+                        ))}
+                      </List>
+
+                      {guide.notes && (
+                        <Alert severity="warning" sx={{ mt: 2 }}>
+                          <Typography variant="body2">
+                            <strong>注意事項：</strong> {guide.notes}
+                          </Typography>
+                        </Alert>
+                      )}
+
+                      <Box sx={{ mt: 3, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          startIcon={<LaunchIcon />}
+                          href={guide.cancellationUrl}
+                          target="_blank"
+                        >
+                          解約ページを開く
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          startIcon={<LaunchIcon />}
+                          href={guide.officialUrl}
+                          target="_blank"
+                        >
+                          公式サイト
+                        </Button>
+                      </Box>
+                    </Box>
+                  );
+                } else {
+                  return (
+                    <Box textAlign="center" py={3}>
+                      <Typography variant="h6" gutterBottom>
+                        解約ガイドが見つかりません
+                      </Typography>
+                      <Typography variant="body1" color="text.secondary" gutterBottom>
+                        {selectedService.merchant} の解約方法については、サービスの公式サイトをご確認ください。
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        startIcon={<LaunchIcon />}
+                        onClick={() => {
+                          const searchQuery = encodeURIComponent(`${selectedService.merchant} 解約方法`);
+                          window.open(`https://www.google.com/search?q=${searchQuery}`, '_blank');
+                        }}
+                        sx={{ mt: 2 }}
+                      >
+                        Googleで検索
+                      </Button>
+                    </Box>
+                  );
+                }
+              })()}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setGuideModalOpen(false)}>
+                閉じる
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
     </Box>
   );
 };

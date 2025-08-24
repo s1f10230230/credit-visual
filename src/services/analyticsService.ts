@@ -1,3 +1,6 @@
+import { periodicPatternService } from './periodicPatternService';
+import { subscriptionDictionaryService } from './subscriptionDictionaryService';
+
 export interface CreditTransaction {
   id: string;
   amount: number;
@@ -157,19 +160,56 @@ class AnalyticsService {
     }).sort((a, b) => b.totalAmount - a.totalAmount);
   }
 
-  analyzeSubscriptions(transactions: CreditTransaction[]): SubscriptionSummary {
-    const subscriptionTransactions = transactions.filter(tx => tx.is_subscription);
+  analyzeSubscriptions(transactions: CreditTransaction[], userCorrections?: Map<string, boolean>): SubscriptionSummary {
+    // ユーザー補正を適用
+    let adjustedTransactions = transactions;
+    if (userCorrections && userCorrections.size > 0) {
+      adjustedTransactions = transactions.map(tx => {
+        const normalizedMerchant = this.normalizeMerchantName(tx.merchant);
+        const userCorrection = userCorrections.get(normalizedMerchant);
+        if (userCorrection !== undefined) {
+          return { ...tx, is_subscription: userCorrection };
+        }
+        return tx;
+      });
+    }
+    
+    // 周期性検出を実行（新機能）
+    const periodicPatterns = periodicPatternService.analyzePeriodicPatterns(adjustedTransactions);
+    
+    // 周期性に基づいてサブスク判定を追加・補正
+    const enhancedTransactions = adjustedTransactions.map(tx => {
+      const pattern = periodicPatterns.find(p => 
+        this.normalizeMerchantName(tx.merchant) === p.normalizedName
+      );
+      
+      // 周期性が検出された場合は自動的にサブスクとして扱う
+      if (pattern && pattern.isLikelySubscription && pattern.confidence > 0.6) {
+        return { ...tx, is_subscription: true };
+      }
+      
+      return tx;
+    });
+    
+    const subscriptionTransactions = enhancedTransactions.filter(tx => tx.is_subscription);
     const merchantSummaries = this.groupByMerchant(subscriptionTransactions);
     
     const monthlyEstimate = this.estimateMonthlySubscriptionCost(subscriptionTransactions);
     
-    const savingOpportunities = this.identifySavingOpportunities(subscriptionTransactions);
+    // 未使用サービス検出を改善（期間ベース）
+    const unusedServices = periodicPatternService.detectUnusedServices(periodicPatterns);
+    const enhancedSavingOpportunities = this.identifyEnhancedSavingOpportunities(
+      subscriptionTransactions, 
+      unusedServices
+    );
 
     return {
       totalMonthlyAmount: monthlyEstimate,
       subscriptionCount: merchantSummaries.length,
       subscriptions: merchantSummaries,
-      savingOpportunities
+      savingOpportunities: enhancedSavingOpportunities,
+      periodicPatterns, // 新フィールド
+      unusedServices: unusedServices.length
     };
   }
 
@@ -233,11 +273,37 @@ class AnalyticsService {
   }
 
   private normalizeMerchantName(merchant: string): string {
-    return merchant
+    // Import の代わりに直接実装（循環参照を避けるため）
+    if (!merchant) return '';
+    
+    let normalized = merchant.toLowerCase();
+    
+    // 全角文字を半角に変換
+    normalized = normalized.replace(/[０-９Ａ-Ｚａ-ｚ]/g, (s) => 
+      String.fromCharCode(s.charCodeAt(0) - 0xFEE0)
+    );
+    
+    // 記号・区切り文字を空白に統一
+    normalized = normalized.replace(/[＊*・\-\u30FC＿_\|\/@#$%&+=]/g, ' ');
+    
+    // 長いID/数字列を除去（3桁以上の数字）
+    normalized = normalized.replace(/\b\d{3,}\b/g, '');
+    
+    // 短いID/数字も除去（末尾の1-2桁の数字）
+    normalized = normalized.replace(/\s+\d{1,2}$/, '');
+    
+    // 複数の空白を1つに
+    normalized = normalized.replace(/\s+/g, ' ').trim();
+    
+    // よく使われる接頭辞・接尾辞を除去
+    normalized = normalized.replace(/^(stripe|sq|paypal|apple|google)\s*[\*\s]*/i, '');
+    normalized = normalized.replace(/\s*(inc|ltd|llc|corp|co|jp|com)\.?$/i, '');
+    
+    // 従来の処理も実行
+    return normalized
       .normalize("NFKC")
-      .replace(/\s+/g, " ")
-      .trim()
-      .replace(/（代行決済）$/, '');
+      .replace(/（代行決済）$/, '')
+      .replace(/^\w/, c => c.toUpperCase()); // 先頭文字を大文字に
   }
 
   private calculateMonthlyAverage(transactions: CreditTransaction[]): number {
@@ -278,6 +344,31 @@ class AnalyticsService {
     });
     
     return Math.round(Array.from(merchantFrequency.values()).reduce((sum, amount) => sum + amount, 0));
+  }
+
+  // 強化された節約提案（周期性・未使用検出ベース）
+  private identifyEnhancedSavingOpportunities(subscriptionTransactions: CreditTransaction[], unusedServices: any[]): any[] {
+    const opportunities = [];
+
+    // 従来の節約提案
+    const traditionalOpportunities = this.identifySavingOpportunities(subscriptionTransactions);
+    opportunities.push(...traditionalOpportunities);
+
+    // 未使用サービスの提案
+    unusedServices.forEach(service => {
+      opportunities.push({
+        type: 'unused_service',
+        merchant: service.merchantName,
+        monthlyCost: service.averageAmount,
+        lastUsed: service.lastTransactionDate,
+        suggestion: `${service.averageDaysBetween}日間隔のサービスですが、最終利用から長期間経過。解約を検討してください。`,
+        priority: 'high',
+        estimatedSavings: service.averageAmount * 12,
+        confidence: service.confidence
+      });
+    });
+
+    return opportunities.sort((a, b) => (b.monthlyCost || 0) - (a.monthlyCost || 0));
   }
 
   private identifySavingOpportunities(subscriptionTransactions: CreditTransaction[]): any[] {

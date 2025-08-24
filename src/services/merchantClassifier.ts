@@ -1,4 +1,5 @@
 // LLM + ルールベースのハイブリッド店舗名分類器
+import { subscriptionDictionaryService } from "./subscriptionDictionaryService";
 
 export interface ExtractedInfo {
   amount: number;
@@ -317,14 +318,65 @@ class MerchantClassifier {
       }
     }
 
-    // まずルールベースを試行
+    // 辞書検索を優先（新機能 - 高精度）
+    const dictionaryResult = this.classifyByDictionary(info);
+    if (dictionaryResult && dictionaryResult.confidence > 0.7) {
+      return dictionaryResult;
+    }
+    
+    // ルールベースを試行
     const ruleResult = this.classifyByRules(info);
     if (ruleResult) {
       return ruleResult;
     }
+    
+    // 辞書結果が低信頼度でもルールベースより優先
+    if (dictionaryResult && dictionaryResult.confidence > 0.3) {
+      return dictionaryResult;
+    }
 
     // CORS問題のため、一時的にLLMを無効化し、強化されたルールベース分類を使用
     return this.enhancedRuleClassification(info);
+  }
+
+  // 辞書ベース分類（新機能）
+  private classifyByDictionary(info: ExtractedInfo): ClassifiedMerchant | null {
+    // スニペットからの直接抽出
+    const extractedMerchant = this.extractMerchantFromSnippet(info.snippet);
+    
+    if (extractedMerchant) {
+      const match = subscriptionDictionaryService.detectService(extractedMerchant, info.amount);
+      
+      if (match) {
+        return {
+          merchant: match.serviceName,
+          category: match.category,
+          platform: this.extractPlatform(info.fromDomain),
+          is_subscription: true,
+          confidence: match.confidence,
+          evidence: `Dictionary match: ${match.matchedPattern}`,
+          notes: `Detected by subscription dictionary: ${match.description}`,
+          source: "SubscriptionDictionary"
+        };
+      }
+    }
+    
+    // サブジェクトや生ボディからの検索も試行
+    const subjectMatch = subscriptionDictionaryService.detectService(info.subject, info.amount);
+    if (subjectMatch && subjectMatch.confidence > 0.5) {
+      return {
+        merchant: subjectMatch.serviceName,
+        category: subjectMatch.category,
+        platform: this.extractPlatform(info.fromDomain),
+        is_subscription: true,
+        confidence: subjectMatch.confidence,
+        evidence: `Subject match: ${subjectMatch.matchedPattern}`,
+        notes: `Detected from subject: ${subjectMatch.description}`,
+        source: "SubscriptionDictionary"
+      };
+    }
+    
+    return null;
   }
 
   // 強化されたルールベース分類（LLM代替）
@@ -672,14 +724,27 @@ class MerchantClassifier {
   }
 
   private isLikelySubscription(merchant: string): boolean {
-    const subscriptionKeywords = [
-      "apple", "google", "netflix", "spotify", "amazon", 
-      "stripe", "subscription", "サブスク", "月額", "定額"
+    // より具体的なサブスクサービス名のホワイトリスト方式
+    const subscriptionServices = [
+      // Apple services
+      "apple music", "apple tv", "apple one", "icloud", "app store",
+      // Google services  
+      "google one", "youtube premium", "youtube music", "google play",
+      // Streaming
+      "netflix", "spotify", "amazon prime", "prime video", "kindle unlimited",
+      "disney+", "hulu", "u-next", "abema", "dazn",
+      // Software/Cloud
+      "adobe", "microsoft 365", "office 365", "dropbox", "notion",
+      "figma", "slack", "zoom", "github", "chatgpt",
+      // Japanese services
+      "ドコモ", "au", "softbank", "楽天モバイル", "mineo", "povo",
+      // Keywords (more specific)
+      "subscription", "サブスク", "月額", "定額", "プレミアム", "premium"
     ];
     
     const lowerMerchant = merchant.toLowerCase();
-    return subscriptionKeywords.some(keyword => 
-      lowerMerchant.includes(keyword.toLowerCase())
+    return subscriptionServices.some(service => 
+      lowerMerchant.includes(service.toLowerCase())
     );
   }
 
