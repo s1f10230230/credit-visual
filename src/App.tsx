@@ -45,6 +45,11 @@ import {
   TrendingUp,
   AccountBalanceWallet,
   TouchApp,
+  Subscriptions,
+  AccountBalance,
+  Schedule,
+  GetApp,
+  Notifications as NotificationsIcon,
 } from "@mui/icons-material";
 import { gmailService, CreditTransaction } from "./services/gmailService";
 import AdBanner from "./components/AdBanner";
@@ -52,8 +57,34 @@ import OnboardingWizard from "./components/OnboardingWizard";
 import { notificationService } from "./services/notificationService";
 import { cardBillingService } from "./services/cardBillingService";
 import CardBillingSettingsDialog from "./components/CardBillingSettings";
+import SubscriptionDashboard from "./components/SubscriptionDashboard";
+import VisualAnalytics from "./components/VisualAnalytics";
+import BudgetManager from "./components/BudgetManager";
+import BillingAlerts from "./components/BillingAlerts";
+import ExportManager from "./components/ExportManager";
+import NotificationCenter from "./components/NotificationCenter";
 
 type Transaction = CreditTransaction;
+
+// トランザクションデータを analyticsService 用に変換
+const convertToAnalyticsTransaction = (tx: Transaction): import('./services/analyticsService').CreditTransaction => {
+  return {
+    id: tx.id,
+    amount: tx.amount,
+    currency: "JPY",
+    date: tx.date,
+    merchant: tx.merchant,
+    category: tx.category,
+    platform: tx.cardName || "unknown",
+    is_subscription: tx.category === "サブスク" || /netflix|spotify|prime|subscription/i.test(tx.merchant),
+    confidence: 0.8,
+    evidence: `Category: ${tx.category}`,
+    notes: tx.status || "",
+    needsReview: tx.status === "unknown",
+    pending: tx.status === "pending",
+    source: "gmail"
+  };
+};
 
 // 価格フォーマット関数
 const formatPrice = (amount: number): string => {
@@ -110,7 +141,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [currentView, setCurrentView] = useState(0); // 0: Home, 1: Analysis, 2: Settings
+  const [currentView, setCurrentView] = useState(0); // 0: Home, 1: Analysis, 2: Subscriptions, 3: Budget, 4: Settings
   const [groupBy, setGroupBy] = useState("none");
   const [viewMode, setViewMode] = useState<"all" | "monthly">("monthly"); // 月ごと表示がデフォルト
   const [selectedMonth, setSelectedMonth] = useState<string>(""); // YYYY-MM形式
@@ -139,7 +170,7 @@ const App: React.FC = () => {
     const isLeftSwipe = distance > 50;
     const isRightSwipe = distance < -50;
 
-    if (isLeftSwipe && currentView < 2) {
+    if (isLeftSwipe && currentView < 4) {
       setCurrentView(currentView + 1);
     }
     if (isRightSwipe && currentView > 0) {
@@ -821,76 +852,7 @@ const App: React.FC = () => {
           unmountOnExit={false}
         >
           <div style={{ display: currentView === 1 ? "block" : "none" }}>
-            <Card>
-              <CardContent>
-                <Typography variant="h5" component="div" sx={{ mb: 2 }}>
-                  取引分析
-                </Typography>
-                <Box sx={{ mb: 2 }}>
-                  {isMobile ? (
-                    <Grid container spacing={1}>
-                      {[
-                        { key: "merchant", label: "利用先別" },
-                        { key: "category", label: "カテゴリ別" },
-                        { key: "card", label: "カード別" },
-                        { key: "none", label: "まとめなし" },
-                      ].map(({ key, label }) => (
-                        <Grid item xs={6} sm={3} key={key}>
-                          <Button
-                            fullWidth
-                            size="small"
-                            variant={groupBy === key ? "contained" : "outlined"}
-                            onClick={() => setGroupBy(key)}
-                            sx={{
-                              minHeight: 40,
-                              fontSize: "0.8rem",
-                              borderRadius: 2,
-                            }}
-                          >
-                            {label}
-                          </Button>
-                        </Grid>
-                      ))}
-                    </Grid>
-                  ) : (
-                    <>
-                      <Button
-                        variant={
-                          groupBy === "merchant" ? "contained" : "outlined"
-                        }
-                        onClick={() => setGroupBy("merchant")}
-                        sx={{ mr: 1 }}
-                      >
-                        利用先別
-                      </Button>
-                      <Button
-                        variant={
-                          groupBy === "category" ? "contained" : "outlined"
-                        }
-                        onClick={() => setGroupBy("category")}
-                        sx={{ mr: 1 }}
-                      >
-                        カテゴリ別
-                      </Button>
-                      <Button
-                        variant={groupBy === "card" ? "contained" : "outlined"}
-                        onClick={() => setGroupBy("card")}
-                        sx={{ mr: 1 }}
-                      >
-                        カード別
-                      </Button>
-                      <Button
-                        variant={groupBy === "none" ? "contained" : "outlined"}
-                        onClick={() => setGroupBy("none")}
-                      >
-                        グループなし
-                      </Button>
-                    </>
-                  )}
-                </Box>
-                {renderGroupedTransactions()}
-              </CardContent>
-            </Card>
+            <VisualAnalytics transactions={transactions.map(convertToAnalyticsTransaction)} />
           </div>
         </Slide>
 
@@ -901,13 +863,35 @@ const App: React.FC = () => {
           unmountOnExit={false}
         >
           <div style={{ display: currentView === 2 ? "block" : "none" }}>
+            <SubscriptionDashboard transactions={transactions.map(convertToAnalyticsTransaction)} />
+          </div>
+        </Slide>
+
+        <Slide
+          direction="left"
+          in={currentView === 3}
+          mountOnEnter
+          unmountOnExit={false}
+        >
+          <div style={{ display: currentView === 3 ? "block" : "none" }}>
+            <BudgetManager transactions={transactions.map(convertToAnalyticsTransaction)} />
+          </div>
+        </Slide>
+
+        <Slide
+          direction="left"
+          in={currentView === 4}
+          mountOnEnter
+          unmountOnExit={false}
+        >
+          <div style={{ display: currentView === 4 ? "block" : "none" }}>
             <Card>
               <CardContent>
                 <Typography variant="h5" component="div" sx={{ mb: 2 }}>
                   設定
                 </Typography>
                 
-                {/* カード設定ボタン */}
+                {/* 機能ボタン */}
                 <Stack spacing={2} sx={{ mb: 3 }}>
                   <Button
                     variant="contained"
@@ -917,7 +901,69 @@ const App: React.FC = () => {
                   >
                     カード別締め日・支払日設定
                   </Button>
+                  
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    onClick={() => setCurrentView(4)} // Keep current view for settings
+                    startIcon={<Schedule />}
+                  >
+                    支払い予測・アラート設定
+                  </Button>
+
+                  <Button
+                    variant="outlined"
+                    color="info"
+                    startIcon={<GetApp />}
+                    onClick={() => {
+                      // スクロールしてエクスポートセクションを表示
+                      setTimeout(() => {
+                        const exportSection = document.getElementById('export-section');
+                        if (exportSection) {
+                          exportSection.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }, 100);
+                    }}
+                  >
+                    データエクスポート
+                  </Button>
+
+                  <Button
+                    variant="outlined"
+                    color="warning"
+                    startIcon={<NotificationsIcon />}
+                    onClick={() => {
+                      // スクロールして通知センターを表示
+                      setTimeout(() => {
+                        const notificationSection = document.getElementById('notification-section');
+                        if (notificationSection) {
+                          notificationSection.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }, 100);
+                    }}
+                  >
+                    通知・アラート設定
+                  </Button>
                 </Stack>
+
+                {/* 支払いアラート機能 */}
+                <BillingAlerts transactions={transactions.map(convertToAnalyticsTransaction)} />
+
+                {/* データエクスポート機能 */}
+                <Box id="export-section" sx={{ mt: 4 }}>
+                  <Typography variant="h6" gutterBottom>
+                    データエクスポート
+                  </Typography>
+                  <ExportManager transactions={transactions.map(convertToAnalyticsTransaction)} />
+                </Box>
+
+                {/* 通知・アラート設定 */}
+                <Box id="notification-section" sx={{ mt: 4 }}>
+                  <Typography variant="h6" gutterBottom>
+                    通知・アラート設定
+                  </Typography>
+                  <NotificationCenter transactions={transactions.map(convertToAnalyticsTransaction)} />
+                </Box>
 
                 {!isMobile && (
                   <Button
@@ -1065,6 +1111,8 @@ const App: React.FC = () => {
           >
             <BottomNavigationAction label="ホーム" icon={<Home />} />
             <BottomNavigationAction label="分析" icon={<Assessment />} />
+            <BottomNavigationAction label="サブスク" icon={<Subscriptions />} />
+            <BottomNavigationAction label="予算" icon={<AccountBalance />} />
             <BottomNavigationAction label="設定" icon={<Settings />} />
           </BottomNavigation>
         </Paper>
