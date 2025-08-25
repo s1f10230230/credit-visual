@@ -1,13 +1,23 @@
 import React from 'react';
-import { Box, AppBar, Toolbar, Typography, Button, Avatar, IconButton, Menu, MenuItem } from '@mui/material';
+import { Box, AppBar, Toolbar, Typography, Button, Avatar, IconButton, Menu, MenuItem, Alert } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import StarIcon from '@mui/icons-material/Star';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTransactionData } from '../../hooks/useTransactionData';
+import SyncStatusCard from '../sync/SyncStatusCard';
 import App from '../../App';
 
 const AuthenticatedApp: React.FC = () => {
   const { currentUser, userData, signOut, isPremium } = useAuth();
+  const { 
+    transactions, 
+    loading, 
+    error, 
+    syncProgress, 
+    lastSyncAt, 
+    refresh 
+  } = useTransactionData();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -118,8 +128,19 @@ const AuthenticatedApp: React.FC = () => {
         </Toolbar>
       </AppBar>
 
+      {/* 同期ステータス表示 */}
+      <Box sx={{ p: 2 }}>
+        <SyncStatusCard
+          syncProgress={syncProgress}
+          lastSyncAt={lastSyncAt}
+          loading={loading}
+          error={error}
+          onRefresh={refresh}
+        />
+      </Box>
+
       {/* メインアプリケーション */}
-      <App />
+      <App transactions={transactions} loading={loading} />
     </Box>
   );
 };
