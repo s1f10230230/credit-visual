@@ -29,6 +29,7 @@ import {
   DialogContent,
   DialogActions,
   Link,
+  Paper,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -41,11 +42,16 @@ import {
   ThumbDown as ThumbDownIcon,
   Cancel as CancelIcon,
   Launch as LaunchIcon,
+  Star as StarIcon,
+  Lock as LockIcon,
 } from '@mui/icons-material';
 import { CreditTransaction } from '../services/analyticsService';
 import { analyticsService } from '../services/analyticsService';
 import { cancellationGuideService } from '../services/cancellationGuideService';
 import { duplicateServiceDetector } from '../services/duplicateServiceDetector';
+import { useAuth } from '../contexts/AuthContext';
+import { useFreemiumRestrictions } from '../hooks/useFreemiumRestrictions';
+import { applyFreemiumRestrictions } from '../utils/dateFilters';
 
 interface SubscriptionDashboardProps {
   transactions: CreditTransaction[];
@@ -54,6 +60,14 @@ interface SubscriptionDashboardProps {
 const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ transactions }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { isPremium } = useAuth();
+  
+  // フリーミアム制限フック
+  const duplicateRestrictions = useFreemiumRestrictions({
+    featureTitle: '重複サービス検出',
+    featureDescription: '同じカテゴリの複数サブスクリプションを自動検出し、解約候補を提案します。'
+  });
+  
   const [subscriptionAnalysis, setSubscriptionAnalysis] = useState<any>(null);
   const [expanded, setExpanded] = useState<string | false>(false);
   // ユーザー補正データのstate
@@ -65,12 +79,19 @@ const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ transacti
   const [duplicateAnalysis, setDuplicateAnalysis] = useState<any>(null);
 
   useEffect(() => {
-    const analysis = analyticsService.analyzeSubscriptions(transactions);
+    // フリーミアム制限を適用したトランザクション
+    const filteredTransactions = applyFreemiumRestrictions(transactions, isPremium);
+    
+    const analysis = analyticsService.analyzeSubscriptions(filteredTransactions);
     setSubscriptionAnalysis(analysis);
     
-    // 重複サービス分析を実行
-    const duplicationAnalysis = duplicateServiceDetector.analyzeSubscriptions(transactions);
-    setDuplicateAnalysis(duplicationAnalysis);
+    // 重複サービス分析（プレミアム機能）
+    if (isPremium) {
+      const duplicationAnalysis = duplicateServiceDetector.analyzeSubscriptions(filteredTransactions);
+      setDuplicateAnalysis(duplicationAnalysis);
+    } else {
+      setDuplicateAnalysis(null);
+    }
     
     // ローカルストレージからユーザー補正データを読み込み
     const storedCorrections = localStorage.getItem('subscriptionCorrections');
@@ -82,7 +103,7 @@ const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ transacti
         console.error('Failed to load user corrections:', error);
       }
     }
-  }, [transactions]);
+  }, [transactions, isPremium]);
 
   // ユーザー補正を処理する関数
   const handleSubscriptionToggle = (merchantName: string, isSubscription: boolean) => {
@@ -445,8 +466,8 @@ const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ transacti
         </Accordion>
       ))}
 
-      {/* 重複サービス検出 */}
-      {duplicateAnalysis && duplicateAnalysis.duplicateGroups.length > 0 && (
+      {/* 重複サービス検出（プレミアム機能） */}
+      {isPremium && duplicateAnalysis && duplicateAnalysis.duplicateGroups.length > 0 && (
         <Card sx={{ mb: 3, border: '2px solid', borderColor: 'info.light' }}>
           <CardContent>
             <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
@@ -714,6 +735,52 @@ const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ transacti
           </>
         )}
       </Dialog>
+
+      {/* 無料ユーザー向けプレミアム機能プロモーション */}
+      {!isPremium && (
+        <Paper 
+          elevation={2} 
+          sx={{ 
+            p: 3, 
+            mt: 3,
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white'
+          }}
+        >
+          <Stack direction="row" alignItems="center" spacing={2}>
+            <StarIcon sx={{ fontSize: 40, color: 'gold' }} />
+            <Box sx={{ flexGrow: 1 }}>
+              <Typography variant="h6" fontWeight="bold" gutterBottom>
+                🚀 プレミアム機能でさらに節約
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                • 重複サービスの自動検出<br/>
+                • 12ヶ月間の支出トレンド分析<br/>
+                • 課金リマインダー通知
+              </Typography>
+            </Box>
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={<StarIcon />}
+              onClick={duplicateRestrictions.showUpgradePrompt}
+              sx={{
+                backgroundColor: 'gold',
+                color: 'black',
+                fontWeight: 'bold',
+                '&:hover': {
+                  backgroundColor: '#ffd700',
+                }
+              }}
+            >
+              無料トライアル
+            </Button>
+          </Stack>
+        </Paper>
+      )}
+
+      {/* プレミアムアップグレードモーダル */}
+      <duplicateRestrictions.UpgradeModal />
     </Box>
   );
 };
