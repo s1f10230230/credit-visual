@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { databaseService } from '../services/databaseService';
-import { syncService, SyncProgress } from '../services/syncService';
-import { DatabaseTransaction } from '../types/database';
+import { apiService, ApiTransaction } from '../services/apiService';
 import { CreditTransaction } from '../services/gmailService';
 import { applyFreemiumRestrictions } from '../utils/dateFilters';
+
+export interface SyncProgress {
+  phase: 'initial' | 'background' | 'incremental';
+  progress: number;
+  message: string;
+  totalTransactions: number;
+  newTransactions: number;
+  errors: string[];
+}
 
 export interface TransactionDataState {
   transactions: CreditTransaction[];
@@ -29,31 +36,28 @@ export const useTransactionData = (): TransactionDataState => {
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
 
-  const loadTransactionsFromDB = async (): Promise<void> => {
+  const loadTransactionsFromAPI = async (): Promise<void> => {
     if (!currentUser) return;
 
     try {
       setLoading(true);
       setError(null);
 
-      // データベースからトランザクション取得
+      // APIからトランザクション取得
       const monthsToLoad = isPremium ? 12 : 3;
-      const dbTransactions = await databaseService.getUserTransactions(
-        currentUser.uid, 
-        monthsToLoad
-      );
+      const apiTransactions = await apiService.getTransactions(monthsToLoad);
 
-      // DatabaseTransaction を CreditTransaction 形式に変換
-      const creditTransactions: CreditTransaction[] = dbTransactions.map(dbTx => ({
-        id: dbTx.messageId,
-        amount: dbTx.amount,
-        merchant: dbTx.merchantRaw,
-        date: dbTx.occurredAt.toDate().toISOString(),
-        category: dbTx.category,
+      // ApiTransaction を CreditTransaction 形式に変換
+      const creditTransactions: CreditTransaction[] = apiTransactions.map(apiTx => ({
+        id: apiTx.messageId,
+        amount: apiTx.amount,
+        merchant: apiTx.merchantRaw,
+        date: apiTx.occurredAt,
+        category: apiTx.category,
         status: 'confirmed' as const,
-        cardName: dbTx.cardLabel,
-        isSubscription: dbTx.isSubscription,
-        confidence: dbTx.confidence
+        cardName: apiTx.cardLabel,
+        isSubscription: apiTx.isSubscription,
+        confidence: apiTx.confidence
       }));
 
       // フリーミアム制限を適用
@@ -65,13 +69,13 @@ export const useTransactionData = (): TransactionDataState => {
       setTransactions(filteredTransactions);
 
       // 同期ステータス取得
-      const syncStatus = await databaseService.getSyncStatus(currentUser.uid);
+      const syncStatus = await apiService.getSyncStatus();
       if (syncStatus) {
-        setLastSyncAt(syncStatus.lastSyncAt.toDate());
+        setLastSyncAt(new Date(syncStatus.lastSyncAt));
       }
 
     } catch (err) {
-      console.error('Failed to load transactions from DB:', err);
+      console.error('Failed to load transactions from API:', err);
       setError(err instanceof Error ? err.message : 'データの読み込みに失敗しました');
     } finally {
       setLoading(false);
@@ -83,41 +87,45 @@ export const useTransactionData = (): TransactionDataState => {
 
     try {
       setError(null);
+      setSyncProgress({ 
+        phase: 'incremental', 
+        progress: 0, 
+        message: '同期開始中...', 
+        totalTransactions: 0, 
+        newTransactions: 0, 
+        errors: [] 
+      });
       
-      // 同期実行
-      await syncService.syncUserData(currentUser.uid, isPremium);
+      // Gmail同期をAPI経由で実行
+      const syncResult = await apiService.syncGmail();
       
-      // データベースから再読み込み
-      await loadTransactionsFromDB();
+      setSyncProgress({ 
+        phase: 'incremental', 
+        progress: 100, 
+        message: syncResult.message, 
+        totalTransactions: syncResult.totalTransactions, 
+        newTransactions: syncResult.newTransactions, 
+        errors: syncResult.errors || [] 
+      });
+      
+      // データを再読み込み
+      await loadTransactionsFromAPI();
+      
+      // プログレス状態をクリア
+      setTimeout(() => setSyncProgress(null), 3000);
 
     } catch (err) {
       console.error('Refresh failed:', err);
       setError(err instanceof Error ? err.message : '同期に失敗しました');
+      setSyncProgress(null);
     }
   };
 
   // 初回ロード
   useEffect(() => {
     if (currentUser) {
-      loadTransactionsFromDB();
+      loadTransactionsFromAPI();
     }
-  }, [currentUser?.uid, isPremium]);
-
-  // 同期プログレスの監視
-  useEffect(() => {
-    const unsubscribe = syncService.onProgress(setSyncProgress);
-    return unsubscribe;
-  }, []);
-
-  // 定期的な同期（5分間隔）
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const interval = setInterval(() => {
-      syncService.syncUserData(currentUser.uid, isPremium);
-    }, 5 * 60 * 1000); // 5分
-
-    return () => clearInterval(interval);
   }, [currentUser?.uid, isPremium]);
 
   return {

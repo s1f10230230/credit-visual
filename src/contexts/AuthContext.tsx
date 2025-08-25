@@ -6,8 +6,8 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../config/firebase';
+import { auth } from '../config/firebase';
+import { apiService } from '../services/apiService';
 import { User } from '../types/user';
 
 interface AuthContextType {
@@ -63,53 +63,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   const createOrUpdateUser = async (firebaseUser: FirebaseUser) => {
-    const userDoc = doc(db, 'users', firebaseUser.uid);
-    const userSnap = await getDoc(userDoc);
+    try {
+      // Firebase ID Tokenを取得
+      const idToken = await firebaseUser.getIdToken();
+      apiService.setAuthToken(idToken);
 
-    let userData: User;
-
-    if (!userSnap.exists()) {
-      // 新規ユーザー
-      userData = {
-        uid: firebaseUser.uid,
-        email: firebaseUser.email!,
-        displayName: firebaseUser.displayName || undefined,
-        photoURL: firebaseUser.photoURL || undefined,
-        planType: 'free',
-        createdAt: new Date(),
-        lastLoginAt: new Date(),
-        gmailConnected: false,
-        preferences: {
-          notifications: true,
-          reminderDays: 3,
-          currency: 'JPY'
-        }
-      };
-
-      await setDoc(userDoc, {
-        ...userData,
-        createdAt: serverTimestamp(),
-        lastLoginAt: serverTimestamp()
-      });
-    } else {
-      // 既存ユーザーのログイン日時更新
-      userData = userSnap.data() as User;
-      await setDoc(userDoc, {
-        lastLoginAt: serverTimestamp()
-      }, { merge: true });
+      // バックエンドでユーザー認証・作成
+      const { user } = await apiService.verifyAuth(idToken);
+      setUserData(user);
+    } catch (error) {
+      console.error('Failed to create/update user:', error);
+      throw error;
     }
-
-    setUserData(userData);
   };
 
   const refreshUserData = async () => {
     if (!currentUser) return;
 
-    const userDoc = doc(db, 'users', currentUser.uid);
-    const userSnap = await getDoc(userDoc);
-    
-    if (userSnap.exists()) {
-      setUserData(userSnap.data() as User);
+    try {
+      const idToken = await currentUser.getIdToken(true); // forceRefresh
+      apiService.setAuthToken(idToken);
+      const user = await apiService.getUserProfile();
+      setUserData(user);
+    } catch (error) {
+      console.error('Failed to refresh user data:', error);
     }
   };
 
