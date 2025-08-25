@@ -455,48 +455,43 @@ class GmailService {
 
       // より積極的な金額検索（上記で見つからない場合）
       if (amount === 0) {
-        const allNumbers = body.match(/[\d,]+/g) || [];
-        console.log("Trying fallback amount detection from:", allNumbers);
+        // より厳密なパターンで金額候補を検索
+        const fallbackPatterns = [
+          /(\d{1,3}(?:,\d{3})*)\s*円/g,
+          /¥\s*(\d{1,3}(?:,\d{3})*)/g,
+          /￥\s*(\d{1,3}(?:,\d{3})*)/g,
+          /(\d{1,6})\s*円(?![^\d]*年)/g // 年を除外
+        ];
+        
+        console.log("Trying fallback amount detection with strict patterns");
 
-        // 数字を金額として妥当性の高い順にソート（高い金額＞3桁以上＞2桁）
         const candidateAmounts = [];
 
-        for (const numStr of allNumbers) {
-          const cleanNum = numStr.replace(/,/g, "");
-          const num = parseInt(cleanNum);
+        for (const pattern of fallbackPatterns) {
+          const matches = [...body.matchAll(pattern)];
+          for (const match of matches) {
+            const cleanNum = match[1].replace(/,/g, "");
+            const num = parseInt(cleanNum);
 
-          // 妥当な範囲で年号や無関係な数字を除外
-          if (
-            num >= 50 &&
-            num <= 1000000 &&
-            num !== 2025 &&
-            num !== 2024 &&
-            num !== 2026 &&
-            !numStr.includes("1070102") && // 郵便番号
-            num !== 70102 && // 郵便番号（107-0102）
-            num !== 29 &&
-            num !== 15 &&
-            num !== 22 &&
-            num !== 4 &&
-            num !== 8
-          ) {
-            // 日時関連
-            candidateAmounts.push({ amount: num, original: numStr });
+            // 妥当な金額範囲のみ
+            if (num >= 50 && num <= 500000 && num !== 2025 && num !== 2024) {
+              candidateAmounts.push({ amount: num, original: match[1] });
+            }
           }
         }
 
-        // 金額の高い順に並び替えて最も妥当なものを選択
-        candidateAmounts.sort((a, b) => b.amount - a.amount);
-
         if (candidateAmounts.length > 0) {
-          amount = candidateAmounts[0].amount;
+          // 最も妥当な金額を選択（中間値を優先）
+          candidateAmounts.sort((a, b) => a.amount - b.amount);
+          const medianIndex = Math.floor(candidateAmounts.length / 2);
+          amount = candidateAmounts[medianIndex].amount;
           console.log(
             "Fallback: found amount",
             amount,
             "from",
-            candidateAmounts[0].original
+            candidateAmounts[medianIndex].original
           );
-          console.log("Other candidates were:", candidateAmounts.slice(1));
+          console.log("All candidates were:", candidateAmounts);
         }
       }
 
