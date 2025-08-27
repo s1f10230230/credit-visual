@@ -249,8 +249,8 @@ class GmailService {
   }
 
   async getEmails(
-    query: string = 'subject:ご利用',
-    maxResults: number = 50
+    query: string = 'カード OR 利用 OR 決済 OR お支払い OR JCB OR VISA OR 楽天',
+    maxResults: number = 100
   ): Promise<EmailData[]> {
     await this.initializeGapi();
 
@@ -354,16 +354,25 @@ class GmailService {
     try {
       const { subject, body, date, id, from } = email;
 
-      // クレジットカード関連の判定
+      // クレジットカード関連の判定（条件を緩化）
       const creditKeywords = [
-        "カードご利用",
-        "ご利用通知",
-        "決済完了",
-        "お支払い",
-        "クレジットカード",
+        "カード",
+        "利用",
+        "決済",
+        "支払",
+        "請求",
         "VISA",
-        "MasterCard",
+        "MasterCard", 
         "JCB",
+        "楽天",
+        "三井住友",
+        "MUFG",
+        "みずほ",
+        "セゾン",
+        "イオン",
+        "エポス",
+        "オリコ",
+        "ジャックス",
       ];
 
       const isCreditRelated = creditKeywords.some(
