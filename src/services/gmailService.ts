@@ -1,4 +1,5 @@
 import { merchantClassifier, ExtractedInfo } from "./merchantClassifier";
+import { CreditCardEmailFilter } from "./creditCardEmailFilter";
 import Encoding from "encoding-japanese";
 import * as qp from "quoted-printable";
 
@@ -341,7 +342,19 @@ class GmailService {
         }
       }
 
-      return emails;
+      // 高精度フィルタリングを適用
+      console.log(`フィルタリング前: ${emails.length}件のメール`);
+      const filterResult = CreditCardEmailFilter.filterTransactionEmails(emails);
+      
+      console.log('フィルタリング結果:', filterResult.stats);
+      console.log('除外されたメール:', filterResult.rejectedEmails.map(r => ({
+        subject: r.email.subject,
+        from: r.email.from,
+        reason: r.reason,
+        confidence: r.confidence
+      })));
+
+      return filterResult.validEmails;
     } catch (error) {
       console.error("Error fetching emails:", error);
       throw error;
@@ -354,33 +367,16 @@ class GmailService {
     try {
       const { subject, body, date, id, from } = email;
 
-      // クレジットカード関連の判定（条件を緩化）
-      const creditKeywords = [
-        "カード",
-        "利用",
-        "決済",
-        "支払",
-        "請求",
-        "VISA",
-        "MasterCard", 
-        "JCB",
-        "楽天",
-        "三井住友",
-        "MUFG",
-        "みずほ",
-        "セゾン",
-        "イオン",
-        "エポス",
-        "オリコ",
-        "ジャックス",
-      ];
-
-      const isCreditRelated = creditKeywords.some(
+      // フィルタリング済みのメールなので、より簡潔な判定
+      // 最終的な検証として基本的なキーワードのみチェック
+      const basicCreditKeywords = ["カード", "利用", "決済", "支払"];
+      const hasBasicKeywords = basicCreditKeywords.some(
         (keyword) => subject.includes(keyword) || body.includes(keyword)
       );
 
-      if (!isCreditRelated) {
-        return null; // クレジット関連でなければスキップ
+      if (!hasBasicKeywords) {
+        console.log('基本キーワードが見つからないため除外:', subject);
+        return null;
       }
 
       // 新しいハイブリッド分類システムを使用
@@ -678,7 +674,8 @@ class GmailService {
         messageId: id,
         rawEmailBody: body,
         source: 'gmail',
-        notes: `信頼度: ${Math.round((classifiedMerchant.confidence || 0.8) * 100)}%`,
+        notes: `信頼度: ${Math.round((classifiedMerchant.confidence || 0.8) * 100)}%` +
+               ` | フィルタ済み高品質メール`,
       };
     } catch (error) {
       console.error("Error parsing credit notification:", error);
@@ -692,7 +689,7 @@ class GmailService {
       console.log(
         "Processing",
         emails.length,
-        "emails for credit transactions"
+        "filtered emails for credit transactions"
       );
 
       const transactions: CreditTransaction[] = [];
