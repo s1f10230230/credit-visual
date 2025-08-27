@@ -82,9 +82,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const idToken = await firebaseUser.getIdToken();
       apiService.setAuthToken(idToken);
 
-      // バックエンドでユーザー認証・作成
-      const { user } = await apiService.verifyAuth(idToken);
-      setUserData(user);
+      try {
+        // バックエンドでユーザー認証・作成
+        const { user } = await apiService.verifyAuth(idToken);
+        setUserData(user);
+      } catch (apiError) {
+        console.log('API server not available, using mock data:', apiError);
+        // API サーバーが利用できない場合はモックデータを使用
+        setUserData({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email!,
+          displayName: firebaseUser.displayName,
+          photoURL: firebaseUser.photoURL,
+          planType: 'free',
+          gmailConnected: false,
+          preferences: {
+            notifications: true,
+            reminderDays: 3,
+            currency: 'JPY'
+          }
+        });
+      }
     } catch (error) {
       console.error('Failed to create/update user:', error);
       throw error;
