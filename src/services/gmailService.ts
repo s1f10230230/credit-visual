@@ -1,5 +1,5 @@
 import { merchantClassifier, ExtractedInfo } from "./merchantClassifier";
-import { CreditCardEmailFilter } from "./creditCardEmailFilter";
+import { TwoLaneEmailFilter } from "./twoLaneEmailFilter";
 import Encoding from "encoding-japanese";
 import * as qp from "quoted-printable";
 
@@ -250,9 +250,13 @@ class GmailService {
   }
 
   async getEmails(
-    query: string = 'カード OR 利用 OR 決済 OR お支払い OR JCB OR VISA OR 楽天',
+    query?: string,
     maxResults: number = 100
   ): Promise<EmailData[]> {
+    // 安全な暫定版クエリ（広めの入口）
+    if (!query) {
+      query = TwoLaneEmailFilter.buildSafeGmailQuery(120);
+    }
     await this.initializeGapi();
 
     if (!this.accessToken) {
@@ -342,19 +346,28 @@ class GmailService {
         }
       }
 
-      // 高精度フィルタリングを適用
-      console.log(`フィルタリング前: ${emails.length}件のメール`);
-      const filterResult = CreditCardEmailFilter.filterTransactionEmails(emails);
+      // 2レーン方式フィルタリングを適用（段階ログ付き）
+      console.log(`[stage0] Gmail取得完了: ${emails.length}件のメール`);
+      const filterResult = TwoLaneEmailFilter.filterEmails(emails, "[Gmail] ");
       
-      console.log('フィルタリング結果:', filterResult.stats);
-      console.log('除外されたメール:', filterResult.rejectedEmails.map(r => ({
-        subject: r.email.subject,
-        from: r.email.from,
-        reason: r.reason,
-        confidence: r.confidence
+      console.log('=== フィルタリング統計 ===');
+      console.log('段階別:', filterResult.stats);
+      console.log('レーン別:', filterResult.stats.byLane);
+      
+      if (filterResult.validEmails.length === 0) {
+        console.error('⚠️ メールが見つかりません - 診断結果:');
+        console.error(TwoLaneEmailFilter.diagnoseZeroResults(filterResult.stats));
+        console.error('除外理由の詳細:', filterResult.stats.byReason);
+      }
+
+      console.log('✅ 採択メール:', filterResult.validEmails.map(v => ({
+        subject: v.email.subject.substring(0, 50) + '...',
+        from: v.email.from,
+        lane: v.classification.lane,
+        amount: v.classification.amountYen
       })));
 
-      return filterResult.validEmails;
+      return filterResult.validEmails.map(v => v.email);
     } catch (error) {
       console.error("Error fetching emails:", error);
       throw error;
@@ -367,15 +380,14 @@ class GmailService {
     try {
       const { subject, body, date, id, from } = email;
 
-      // フィルタリング済みのメールなので、より簡潔な判定
-      // 最終的な検証として基本的なキーワードのみチェック
-      const basicCreditKeywords = ["カード", "利用", "決済", "支払"];
-      const hasBasicKeywords = basicCreditKeywords.some(
-        (keyword) => subject.includes(keyword) || body.includes(keyword)
-      );
-
-      if (!hasBasicKeywords) {
-        console.log('基本キーワードが見つからないため除外:', subject);
+      // 2レーンフィルタ済みメールなので基本検証のみ
+      // 金額が正しく抽出できるかの最終確認
+      console.log(`[Parse] processing: ${subject.substring(0, 50)}... from ${from}`);
+      
+      // 再分類して詳細情報を取得
+      const classification = TwoLaneEmailFilter.classifyMail(email, "[Parse] ");
+      if (!classification.ok) {
+        console.log(`[Parse] 再分類で除外: ${classification.reasons.join(', ')}`);
         return null;
       }
 
@@ -392,8 +404,12 @@ class GmailService {
         rawBody: body,
       };
 
-      // より精密な金額抽出
-      let amount = 0;
+      // 2レーンフィルタで既に検証済みの金額を使用
+      const amount = classification.amountYen;
+      console.log(`[Parse] 金額確定: ${amount}円 (2レーンフィルタ済み)`);
+      
+      // 従来の金額抽出ロジック（バックアップ用）
+      let legacyAmount = 0;
       const amountPatterns = [
         // JCB特有のパターン（実際のメール形式に基づく）
         /【ご利用金額】\s*([¥￥]?[\d,]+)\s*円/,
@@ -675,7 +691,7 @@ class GmailService {
         rawEmailBody: body,
         source: 'gmail',
         notes: `信頼度: ${Math.round((classifiedMerchant.confidence || 0.8) * 100)}%` +
-               ` | フィルタ済み高品質メール`,
+               ` | 2レーン(${classification.lane})済み | フィルタ信頼度: ${Math.round(classification.confidence * 100)}%`,
       };
     } catch (error) {
       console.error("Error parsing credit notification:", error);
