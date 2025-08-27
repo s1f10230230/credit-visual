@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { 
   User as FirebaseUser, 
-  signInWithPopup, 
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider, 
   signOut as firebaseSignOut,
   onAuthStateChanged
@@ -44,8 +46,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
     provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
     
     try {
-      const result = await signInWithPopup(auth, provider);
-      await createOrUpdateUser(result.user);
+      // Try popup first, fallback to redirect
+      try {
+        const result = await signInWithPopup(auth, provider);
+        await createOrUpdateUser(result.user);
+      } catch (popupError: any) {
+        console.log('Popup failed, trying redirect...', popupError);
+        if (popupError.code === 'auth/popup-blocked' || 
+            popupError.code === 'auth/popup-closed-by-user' ||
+            popupError.message?.includes('Cross-Origin-Opener-Policy')) {
+          await signInWithRedirect(auth, provider);
+        } else {
+          throw popupError;
+        }
+      }
     } catch (error) {
       console.error('Google sign-in error:', error);
       throw error;
@@ -91,6 +105,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   useEffect(() => {
+    // Handle redirect result first
+    const handleRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+          await createOrUpdateUser(result.user);
+        }
+      } catch (error) {
+        console.error('Redirect result error:', error);
+      }
+    };
+
+    handleRedirectResult();
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       
