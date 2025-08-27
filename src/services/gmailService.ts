@@ -27,6 +27,13 @@ export interface CreditTransaction {
   cardName?: string;
   isSubscription?: boolean; // Classifier判定結果を保持
   confidence?: number; // 分類の信頼度
+  // メール情報
+  emailSubject?: string; // メール件名
+  emailSender?: string; // 送信者
+  messageId?: string; // Gmail Message ID
+  rawEmailBody?: string; // 元のメール本文
+  source?: string; // データソース
+  notes?: string; // 追加メモ
 }
 
 class GmailService {
@@ -656,6 +663,13 @@ class GmailService {
         status: amount > 0 ? "confirmed" : "unknown",
         isSubscription: classifiedMerchant.is_subscription, // Classifierの判定結果を保存
         confidence: classifiedMerchant.confidence,
+        // メール情報を追加
+        emailSubject: subject,
+        emailSender: from,
+        messageId: id,
+        rawEmailBody: body,
+        source: 'gmail',
+        notes: `信頼度: ${Math.round((classifiedMerchant.confidence || 0.8) * 100)}%`,
       };
     } catch (error) {
       console.error("Error parsing credit notification:", error);

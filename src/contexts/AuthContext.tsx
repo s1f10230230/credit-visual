@@ -123,11 +123,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   useEffect(() => {
+    let redirectHandled = false;
+
     // Handle redirect result first
     const handleRedirectResult = async () => {
       try {
         const result = await getRedirectResult(auth);
         if (result) {
+          redirectHandled = true;
           await createOrUpdateUser(result.user);
         }
       } catch (error) {
@@ -140,9 +143,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       
-      if (user) {
+      if (user && !redirectHandled) {
         await createOrUpdateUser(user);
-      } else {
+      } else if (!user) {
         setUserData(null);
       }
       

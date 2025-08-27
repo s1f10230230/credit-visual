@@ -53,6 +53,7 @@ import {
   Add,
   Edit,
   Delete,
+  Info,
 } from "@mui/icons-material";
 import { gmailService, CreditTransaction } from "./services/gmailService";
 import AdBanner from "./components/AdBanner";
@@ -67,7 +68,9 @@ import BillingAlerts from "./components/BillingAlerts";
 import ExportManager from "./components/ExportManager";
 import NotificationCenter from "./components/NotificationCenter";
 import TransactionEditor from "./components/TransactionEditor";
+import TransactionDetailDialog from "./components/TransactionDetailDialog";
 import { overseasSubscriptionService } from "./services/overseasSubscriptionService";
+import { SubscriptionDetector } from "./services/subscriptionDetector";
 
 type Transaction = CreditTransaction;
 
@@ -199,6 +202,8 @@ const App: React.FC = () => {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editorMode, setEditorMode] = useState<'add' | 'edit'>('add');
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   // Swipe gesture handling for mobile
   const [touchStart, setTouchStart] = useState(0);
@@ -283,6 +288,20 @@ const App: React.FC = () => {
       }
     }
   }, [transactions, selectedMonth]);
+
+  // サブスクリプション自動検出
+  React.useEffect(() => {
+    if (transactions.length > 0) {
+      const patterns = SubscriptionDetector.detectSubscriptions(transactions);
+      if (patterns.length > 0) {
+        console.log('検出されたサブスクリプションパターン:', patterns);
+        
+        // 取引にサブスクリプション情報をマーク
+        const updatedTransactions = SubscriptionDetector.markSubscriptions(transactions, patterns);
+        setTransactions(updatedTransactions);
+      }
+    }
+  }, [transactions.length]); // 取引数が変わった時のみ実行
 
   useEffect(() => {
     // オンボーディング完了状態をチェック
@@ -548,6 +567,11 @@ const App: React.FC = () => {
     setEditingTransaction(transaction);
     setEditorMode('edit');
     setEditorOpen(true);
+  };
+
+  const handleShowTransactionDetail = (transaction: Transaction) => {
+    setSelectedTransaction(transaction);
+    setDetailDialogOpen(true);
   };
 
   const handleDeleteTransaction = (transactionId: string) => {
@@ -883,6 +907,16 @@ const App: React.FC = () => {
                                   >
                                     ¥{formatPrice(transaction.amount)}
                                   </Typography>
+                                  <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleShowTransactionDetail(transaction);
+                                    }}
+                                    title="詳細を表示"
+                                  >
+                                    <Info fontSize="small" />
+                                  </IconButton>
                                   <IconButton
                                     size="small"
                                     onClick={(e) => {
@@ -1370,6 +1404,12 @@ const App: React.FC = () => {
         onDelete={editorMode === 'edit' ? handleEditorDelete : undefined}
         transaction={editingTransaction}
         mode={editorMode}
+      />
+
+      <TransactionDetailDialog
+        open={detailDialogOpen}
+        onClose={() => setDetailDialogOpen(false)}
+        transaction={selectedTransaction}
       />
     </Box>
   );
