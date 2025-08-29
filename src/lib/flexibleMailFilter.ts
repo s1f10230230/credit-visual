@@ -89,14 +89,38 @@ function normalizeAmount(amountStr: string): number | null {
   return Number.isFinite(amount) && amount > 0 ? amount : null;
 }
 
+// 例示・サンプル文脈の検出
+function isExampleContext(text: string, matchIndex: number): boolean {
+  const EXCLUDE_CONTEXT = /(お支払い例|支払例|分割払い.*例|例示|シミュレーション|サンプル|参考|ご案内|設定|手続き|契約内容)/i;
+  
+  // マッチ位置の前後40文字をチェック
+  const start = Math.max(0, matchIndex - 40);
+  const end = Math.min(text.length, matchIndex + 40);
+  const context = text.slice(start, end);
+  
+  return EXCLUDE_CONTEXT.test(context);
+}
+
 function chooseBestAmount(text: string, candidates: { match: RegExpMatchArray, amount: number }[]): number | null {
   if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0].amount;
+  
+  // 例示文脈の候補を除外
+  const validCandidates = candidates.filter(({ match }) => {
+    const idx = match.index ?? text.indexOf(match[0]);
+    const isExample = isExampleContext(text, idx);
+    if (isExample) {
+      console.log(`🚫 [FLEXIBLE] Example context detected, excluding amount: ${match[0]}`);
+    }
+    return !isExample;
+  });
+  
+  if (validCandidates.length === 0) return null;
+  if (validCandidates.length === 1) return validCandidates[0].amount;
 
   // コンテキスト語パターン - 金額近傍にあると信頼度UP
   const ctxRe = /(合計|総額|Amount|Total|ご利用金額|決済金額|支払|請求|課金|利用額)/i;
   
-  const scored = candidates.map(({ match, amount }) => {
+  const scored = validCandidates.map(({ match, amount }) => {
     const idx = match.index ?? text.indexOf(match[0]);
     let score = 0;
     
@@ -296,6 +320,14 @@ export function classifyMailFlexibly(
     reasons.push('credit-related-content');
   }
   
+  // 2.5) 案内・契約メール検出（早期除外）
+  const ANNOUNCEMENT_PATTERNS = /(契約内容|重要なお知らせ|ご案内|設定手続|利用方法|規約|約款|変更のお知らせ)/i;
+  if (ANNOUNCEMENT_PATTERNS.test(subject + text)) {
+    console.log(`${logPrefix}📋 [FLEXIBLE] Announcement mail detected, reducing confidence`);
+    confidence -= 40;
+    reasons.push('announcement-mail');
+  }
+  
   // 3) プロモーション除外チェック（但し完全排除はしない）
   const promoMatches = (subject + text).match(patterns.promotional);
   if (promoMatches && promoMatches.length > 2) {
@@ -332,9 +364,20 @@ export function classifyMailFlexibly(
     reasons.push('merchant-extracted');
   }
   
-  // 6) 最終判定
+  // 6) 最終判定 - confidence閾値を上げて例示金額を除外
   const finalTrustLevel = confidence >= 60 ? 'high' : 
                          confidence >= 40 ? 'medium' : 'low';
+  
+  // 低confidence（例示・案内メール）は除外
+  if (confidence < 60) {
+    console.log(`${logPrefix}🚫 [FLEXIBLE] Low confidence (${confidence}%), likely announcement/example email`);
+    return {
+      ok: false,
+      extractedData: {},
+      reasons: [...reasons, 'low-confidence'],
+      confidence
+    };
+  }
   
   console.log(`${logPrefix}✅ [FLEXIBLE] Success: amount=${amount}, trust=${finalTrustLevel}, confidence=${confidence}`);
   
