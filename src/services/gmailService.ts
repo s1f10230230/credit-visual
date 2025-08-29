@@ -2,6 +2,7 @@ import { merchantClassifier, ExtractedInfo, classifyCreditMailToTxn } from "./me
 import { classifyMailFlexibly } from "../lib/flexibleMailFilter";
 import { TwoLaneEmailFilter } from "./twoLaneEmailFilter";
 import { buildSimpleGmailQuery, classifySimple, type MailMeta, type MailText } from "../lib/simpleMailFilter";
+import { buildFlexibleGmailQuery } from "../lib/flexibleMailFilter";
 import Encoding from "encoding-japanese";
 import * as qp from "quoted-printable";
 
@@ -42,7 +43,7 @@ export interface CreditTransaction {
 class GmailService {
   private isGapiLoaded = false;
   private accessToken: string | null = null;
-  private CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  private CLIENT_ID = (import.meta.env as any)?.VITE_GOOGLE_CLIENT_ID || 'dummy-client-id';
   private DISCOVERY_DOC =
     "https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest";
   private SCOPES = "https://www.googleapis.com/auth/gmail.readonly";
@@ -273,9 +274,9 @@ class GmailService {
     query?: string,
     maxResults: number = 2000
   ): Promise<EmailData[]> {
-    // シンプル版：超広い入口で最大Recall（365日）
+    // 柔軟版：ゼロ漏れ指向で最大Recall（365日）
     if (!query) {
-      query = buildSimpleGmailQuery(365); // Simple query - no subject filters, 365 days
+      query = buildFlexibleGmailQuery(365); // Flexible query - optimized for zero leakage
     }
     await this.initializeGapi();
 
@@ -412,17 +413,18 @@ class GmailService {
         };
         const body: MailText = { plain: email.body };
         
-        const classification = classifySimple(meta, body);
+        // 改良された柔軟フィルターを使用（抜け漏れ防止）
+        const classification = classifyMailFlexibly(meta, body);
         if (classification.ok) {
           classifiedEmails.push(email);
-          console.log(`✅ [SIMPLE] 採択: ${email.subject.substring(0, 40)}... ${classification.amountYen}円`);
+          console.log(`✅ [FLEXIBLE] 採択: ${email.subject.substring(0, 40)}... ${classification.amountYen}円 | Trust: ${classification.trustLevel} | Confidence: ${classification.confidence}%`);
         } else {
-          rejectedReasons[classification.reason] = (rejectedReasons[classification.reason] || 0) + 1;
-          console.debug(`❌ [SIMPLE] 除外: ${email.subject.substring(0, 25)}... 理由: ${classification.reason}`);
+          rejectedReasons['no-amount-or-low-confidence'] = (rejectedReasons['no-amount-or-low-confidence'] || 0) + 1;
+          console.debug(`❌ [FLEXIBLE] 除外: ${email.subject.substring(0, 25)}... 理由: no amount or low confidence`);
         }
       }
 
-      console.log('🎯 === SIMPLE FILTERING RESULTS ===');
+      console.log('🎯 === FLEXIBLE FILTERING RESULTS ===');
       console.log(`[stage0] Gmail listed: ${emails.length}`);
       console.log(`[stage1] Text available: ${textOkCount}`);
       console.log(`[final] Accepted: ${classifiedEmails.length}`);
