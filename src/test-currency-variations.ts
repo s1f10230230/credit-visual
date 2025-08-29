@@ -15,6 +15,20 @@ const uberEmail = {
   }
 };
 
+// Problematic Uber Eats case - number concatenation issue
+const uberProblematicEmail = {
+  id: 'test-uber-problematic',
+  subject: 'Uber Eats - Receipt',
+  from: 'noreply@uber.com',
+  body: {
+    html: `<div>
+      <span>&yen;915</span><span>2025年8月注文</span>
+      <p>Your order details...</p>
+      <p>Total: &yen;915</p>
+    </div>`
+  }
+};
+
 // Full-width yen with NBSP
 const fullWidthYenEmail = {
   id: 'test-fullwidth',
@@ -46,6 +60,7 @@ console.log('=== 🌍 通貨表記バリエーションテスト ===\n');
 
 const currencyTests = [
   { name: 'Uber(&yen;)', email: uberEmail },
+  { name: 'Uber Problematic (¥915+2025年)', email: uberProblematicEmail },
   { name: 'Full-width￥+NBSP', email: fullWidthYenEmail },
   { name: 'Mixed Currency', email: mixedCurrencyEmail }
 ];
@@ -65,5 +80,6 @@ currencyTests.forEach(({ name, email }) => {
 
 console.log('=== 期待結果 ===');
 console.log('Uber: 1,250円 抽出（&yen; HTML entity → ¥ 変換）');
+console.log('Uber Problematic: 915円 抽出（¥9152025 → ¥915に修正、コンテキスト優先）');
 console.log('Full-width: 2,500円 抽出（￥ + NBSP対応）');
 console.log('Mixed: 2,300円 抽出（JPY表記対応）');

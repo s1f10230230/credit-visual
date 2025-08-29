@@ -29,8 +29,8 @@ export type FlexibleClassification = {
 
 // 正規表現パターン
 const patterns = {
-  // 金額抽出 - 円/¥/￥/&yen;/NBSP/JPY 対応
-  amount: /([0-9０-９,，]+)\s*円|(?:¥|￥)\s*[\u00A0\u2000-\u200B]?\s*([0-9０-９,，]+)|([0-9０-９,，]+)\s*JPY/gi,
+  // 金額抽出 - 年（20xx）直後を除外する負の先読み付き
+  amount: /(?:¥|￥)\s*([0-9０-９,，]+)(?!\s*20\d{2})|([0-9０-９,，]+)\s*円(?!\s*20\d{2})|([0-9０-９,，]+)\s*JPY\b/gi,
   
   // 日付 + 時刻（任意）対応
   date: /(\d{4})[\/年\-.](\d{1,2})[\/月\-.](\d{1,2})(?:[日\s]|\s+)?(\d{1,2}:\d{2})?/g,
@@ -89,21 +89,61 @@ function normalizeAmount(amountStr: string): number | null {
   return Number.isFinite(amount) && amount > 0 ? amount : null;
 }
 
+function chooseBestAmount(text: string, candidates: { match: RegExpMatchArray, amount: number }[]): number | null {
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0].amount;
+
+  // コンテキスト語パターン - 金額近傍にあると信頼度UP
+  const ctxRe = /(合計|総額|Amount|Total|ご利用金額|決済金額|支払|請求|課金|利用額)/i;
+  
+  const scored = candidates.map(({ match, amount }) => {
+    const idx = match.index ?? text.indexOf(match[0]);
+    let score = 0;
+    
+    // 直後に西暦が続くなら大幅減点（¥9152025 … など）
+    const tail = text.slice(idx + match[0].length, idx + match[0].length + 6);
+    if (/20\d{2}/.test(tail.replace(/\s/g, ''))) {
+      score -= 100;
+    }
+    
+    // 近傍±40文字にコンテキスト語があるか
+    const context = text.slice(Math.max(0, idx - 40), idx + 40);
+    if (ctxRe.test(context)) {
+      score += 50;
+    }
+    
+    // 単発レシート常識範囲（1〜300,000円）内なら加点
+    if (amount >= 1 && amount <= 300_000) {
+      score += 30;
+    } else if (amount > 1_000_000) {
+      score -= 20; // 100万超えは減点（月次請求の可能性はあるが）
+    }
+    
+    return { amount, score, match };
+  });
+  
+  // 最高スコアの候補を返す
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].score > -50 ? scored[0].amount : null; // あまりに低スコアなら除外
+}
+
 function extractAmountFromText(text: string): number | null {
-  const matches = text.matchAll(patterns.amount);
+  const matches = Array.from(text.matchAll(patterns.amount));
+  
+  const candidates: { match: RegExpMatchArray, amount: number }[] = [];
   
   for (const match of matches) {
     // Check which group matched
     const amountStr = match[1] || match[2] || match[3];
     if (amountStr) {
       const amount = normalizeAmount(amountStr);
-      if (amount && amount >= 1 && amount <= 10_000_000) { // 緩やかな範囲チェック
-        return amount;
+      if (amount && amount >= 1 && amount <= 10_000_000) { // 上限は緩め（月次請求考慮）
+        candidates.push({ match, amount });
       }
     }
   }
   
-  return null;
+  return chooseBestAmount(text, candidates);
 }
 
 function extractDateFromText(text: string): string | null {
@@ -160,15 +200,18 @@ function pickBodyText(body: MailText): string {
       .trim();
   }
   if (body.html && body.html.trim()) {
-    // Simple HTML to text conversion with entity decoding
+    // Enhanced HTML to text conversion preventing number concatenation
     return body.html
-      .replace(/&yen;|&#165;/gi, '¥')
+      .replace(/&yen;|&#165;/gi, '¥')   // 通貨
+      .replace(/&nbsp;|\u00A0/gi, ' ')   // NBSP→半角スペース
+      .replace(/>\s*</g, '>\n<')         // タグの隣接を改行で分離
+      .replace(/([0-9０-９])年/g, '$1 年') // 連結しがちな箇所に薄い区切り
+      .replace(/([0-9０-９])月/g, '$1 月')
       .replace(/<script[\s\S]*?<\/script>/gi, '')
       .replace(/<style[\s\S]*?<\/style>/gi, '')
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n')
       .replace(/<[^>]+>/g, ' ')
-      .replace(/\u00A0/g, ' ') // NBSP
       .replace(/\s+/g, ' ')
       .trim();
   }
