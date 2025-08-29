@@ -48,7 +48,10 @@ const patterns = {
   creditRelated: /(ご利用|利用|請求|請求額|明細|注文|領収|購入|決済|支払|課金|charged|charge|payment|receipt|invoice)/gi,
   
   // 除外すべきプロモパターン
-  promotional: /(クーポン|キャンペーン|セール|割引|ポイント還元|メルマガ|newsletter)/gi
+  promotional: /(クーポン|キャンペーン|セール|割引|ポイント還元|メルマガ|newsletter)/gi,
+  
+  // 除外すべき案内・例示パターン
+  informational: /(設定手続き|設定案内|お手続き|例示|お支払い例|分割払いの.*例|リボ払いの内容|ご契約内容|規約|利用方法|手続方法)/gi
 };
 
 // ドメイン判定
@@ -333,6 +336,18 @@ export function classifyMailFlexibly(
   if (promoMatches && promoMatches.length > 2) {
     confidence -= 20;
     reasons.push('promotional-content');
+  }
+  
+  // 3.5) 案内・例示メール除外チェック（強力に除外）
+  const infoMatches = (subject + text).match(patterns.informational);
+  if (infoMatches && infoMatches.length > 0) {
+    console.log(`${logPrefix}🚫 [FLEXIBLE] Informational email detected: ${infoMatches.slice(0, 3).join(', ')}...`);
+    return {
+      ok: false,
+      extractedData: {},
+      reasons: [...reasons, 'informational-content'],
+      confidence: Math.max(0, confidence - 80) // 大幅減点
+    };
   }
   
   // 4) 金額抽出 - これが最重要！
