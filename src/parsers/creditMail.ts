@@ -20,14 +20,17 @@ const YEN = '(?:円|\\s*JPY|¥|￥)?';
 const SP = '[ \\t　]*';
 
 const rx = {
-  // --- 除外（ステートメント/明細更新/利用不可） ---
+  // --- 除外（ステートメント/明細更新/利用不可/案内・例示） ---
   isStatement: new RegExp(
     [
       'ご請求額確定', 'ご請求額の?お知らせ', 'ご請求額', '明細更新', 'WEB明細',
       '請求金額', '請求が?確定', 'ご利用明細', 'News\\+Plus', '請求分',
       // 利用不可・エラー系メール
       'ご利用いただけなかった', '利用いただけなかった', 'ご利用できませんでした',
-      '利用制限', '利用停止', 'エラー', '認証失敗'
+      '利用制限', '利用停止', 'エラー', '認証失敗',
+      // 案内・例示・設定メール
+      '設定手続き', '設定案内', 'お手続き', '例示', 'お支払い例', 
+      '分割払いの.*例', 'リボ払いの内容', 'ご契約内容', '規約', '利用方法', '手続方法'
     ].join('|')
   ),
 
@@ -117,6 +120,12 @@ export function looksLikeSokuho(mail: RawEmail, hasMerchant: boolean): boolean {
 export function extractTxnFromUsageMail(mail: RawEmail): Txn | null {
   console.log('🔍 [CREDIT_MAIL] Extracting from email:', mail.subject?.substring(0, 50));
   console.log('📧 [CREDIT_MAIL] Body preview:', mail.body?.substring(0, 200));
+
+  // 0) 案内・例示・ステートメントメール除外チェック
+  if (looksLikeStatement(mail)) {
+    console.log('🚫 [CREDIT_MAIL] Statement/informational email detected, skipping');
+    return null;
+  }
 
   // 1) ラベル付き金額
   const amountRaw = pickFirstMatch(rx.amountLine, mail.body);
