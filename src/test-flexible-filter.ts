@@ -184,6 +184,177 @@ results.forEach(({ name, result }) => {
   console.log(`${name}: ${status} | Trust: ${trust} | Amount: ${amount} | Confidence: ${confidence}%`);
 });
 
+// 追加テストケース：その他の主要カード会社
+const mufgEmail = {
+  id: 'test-8',
+  subject: '【MUFGカード】ご利用速報',
+  from: 'info@cr.mufg.jp',
+  body: {
+    plain: `MUFGカードをご利用いただき、ありがとうございます。
+
+■ご利用内容
+ご利用日：2025年08月28日
+ご利用先：Amazon.co.jp
+ご利用金額：3,480円
+
+※この通知は利用速報です。詳細は後日WEB明細をご確認ください。`
+  }
+};
+
+const nicosEmail = {
+  id: 'test-9',
+  subject: 'NICOSカード ご利用のお知らせ',
+  from: 'info@nicos.co.jp',
+  body: {
+    plain: `いつもNICOSカードをご利用いただきありがとうございます。
+
+【ご利用日時】2025/08/28 15:32
+【ご利用金額】1,580円
+【ご利用店舗名】セブンイレブン千代田店
+
+ご利用明細の詳細はNICOS WEBサービスでご確認ください。`
+  }
+};
+
+const oricoEmail = {
+  id: 'test-10',
+  subject: '【Orico】カード利用通知',
+  from: 'notice@orico.co.jp',
+  body: {
+    plain: `Oricoカードご利用のお知らせ
+
+利用日時: 2025/08/28 12:15
+加盟店名: ローソン渋谷店
+利用金額: 890円
+
+本メールは自動送信です。`
+  }
+};
+
+const eposEmail = {
+  id: 'test-11',
+  subject: 'エポスカード ご利用通知',
+  from: 'mail@eposcard.co.jp',
+  body: {
+    plain: `エポスカードをご利用いただきありがとうございます。
+
+◆ご利用内容◆
+ご利用日：2025年8月28日
+ご利用先：マルイ新宿店
+ご利用額：12,800円
+
+※ご不明な点がございましたらお客様センターまでお問い合わせください。`
+  }
+};
+
+const paypayEmail = {
+  id: 'test-12',
+  subject: 'PayPayカード 利用通知',
+  from: 'noreply@paypay-card.co.jp',
+  body: {
+    plain: `PayPayカードご利用のお知らせ
+
+利用日: 2025/08/28
+店舗: Uber Eats
+決済金額: 1,250円
+
+PayPayアプリでもご確認いただけます。`
+  }
+};
+
+const aeonEmail = {
+  id: 'test-13',
+  subject: 'イオンカード ご利用明細',
+  from: 'info@aeoncard.co.jp',
+  body: {
+    plain: `イオンカードをご利用いただきありがとうございます。
+
+■ ご利用明細 ■
+利用日：2025年08月28日
+利用先：イオンモール幕張新都心
+お支払い金額：4,560円
+
+WAONポイントも貯まります！`
+  }
+};
+
+const amexEmail = {
+  id: 'test-14',
+  subject: 'American Express Card - Transaction Alert',
+  from: 'DoNotReply@americanexpress.com',
+  body: {
+    plain: `Dear Cardholder,
+
+A charge has been made to your American Express Card.
+
+Transaction Date: 08/28/2025
+Merchant: STARBUCKS SHIBUYA
+Amount: ¥650
+
+Thank you for using your American Express Card.`
+  }
+};
+
+const dcEmail = {
+  id: 'test-15',
+  subject: 'DCカード ご利用のお知らせ',
+  from: 'info@dccard.co.jp',
+  body: {
+    plain: `DCカードをご利用いただき、ありがとうございます。
+
+▼利用内容▼
+ご利用日時：2025年08月28日 16:45
+ご利用先：ファミリーマート品川店
+ご利用金額：720円
+
+※本メールは自動配信されています。`
+  }
+};
+
+console.log('\n=== 🏢 主要カード会社の追加テスト ===\n');
+
+const additionalEmails = [
+  { name: 'MUFG', email: mufgEmail },
+  { name: 'NICOS', email: nicosEmail },
+  { name: 'Orico', email: oricoEmail },
+  { name: 'EPOS', email: eposEmail },
+  { name: 'PayPay', email: paypayEmail },
+  { name: 'AEON', email: aeonEmail },
+  { name: 'AMEX', email: amexEmail },
+  { name: 'DC', email: dcEmail }
+];
+
+const additionalResults: any[] = [];
+
+additionalEmails.forEach(({ name, email }) => {
+  console.log(`${additionalEmails.indexOf({ name, email }) + 8}. ${name}カードテスト`);
+  const result = classifyMailFlexibly(email, email.body);
+  console.log('結果:', result);
+  console.log('');
+  
+  additionalResults.push({ name, result });
+});
+
+console.log('=== 📊 全体結果サマリー ===');
+
+// 既存の結果に新しい結果を追加
+const allResults = [
+  ...results,
+  ...additionalResults
+];
+
+allResults.forEach(({ name, result }) => {
+  const status = result.ok ? '✅ PASS' : '❌ FAIL';
+  const trust = result.trustLevel || 'N/A';
+  const amount = result.extractedData.amount || 'N/A';
+  const merchant = result.extractedData.merchant || 'N/A';
+  const date = result.extractedData.date || 'N/A';
+  const confidence = result.confidence;
+  
+  console.log(`${name}: ${status} | Trust: ${trust} | Amount: ${amount} | Merchant: ${merchant} | Date: ${date} | Confidence: ${confidence}%`);
+});
+
 console.log('\n=== 期待結果との比較 ===');
 console.log('すべてのメールで金額が正しく抽出され、適切な trust level が設定されることを期待');
 console.log('プロモーション混在メールも金額が取れれば通すが、confidence は下がる想定');
+console.log('各カード会社固有のフォーマットでも情報が正しく抽出されることを確認');

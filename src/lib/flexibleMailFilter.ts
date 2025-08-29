@@ -35,12 +35,12 @@ const patterns = {
   // 日付 + 時刻（任意）対応
   date: /(\d{4})[\/年\-.](\d{1,2})[\/月\-.](\d{1,2})(?:[日\s]|\s+)?(\d{1,2}:\d{2})?/g,
   
-  // 店舗名パターン
+  // 店舗名パターン (グローバルフラグ削除でmatch[1]問題を修正)
   merchant: {
-    labeled: /(?:ご利用先|利用先|店名|加盟店|merchant)[:：]\s*(.+?)(?:\n|$)/gi,
-    bracket: /【(.+?)】/g,
-    parenthesis: /(.+?)（.+?）/g,
-    inlineBeforeAmount: /([^\s　]+)\s+[0-9,，]+円/g
+    labeled: /(?:ご利用先|利用先|店名|加盟店|merchant)[:：]\s*(.+?)(?:\n|$)/i,
+    bracket: /【(.+?)】/,
+    parenthesis: /(.+?)（.+?）/,
+    inlineBeforeAmount: /([^\s　][^0-9]*?)\s+[0-9,，]+円/
   },
   
   // 件名・本文の緩やかな判定パターン
