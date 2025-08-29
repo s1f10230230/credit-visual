@@ -1,7 +1,7 @@
 import React from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, AuthContext } from './contexts/AuthContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import AuthenticatedApp from './components/layout/AuthenticatedApp';
 
@@ -40,7 +40,46 @@ const theme = createTheme({
   },
 });
 
+// Dummy auth provider for skipauth mode
+const DummyAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const dummyAuthValue = {
+    currentUser: { uid: 'dummy', email: 'test@example.com' } as any,
+    userData: { 
+      uid: 'dummy', 
+      email: 'test@example.com', 
+      planType: 'free' as const,
+      gmailConnected: false,
+      preferences: { notifications: true, reminderDays: 3, currency: 'JPY' as const }
+    },
+    loading: false,
+    signInWithGoogle: async () => {},
+    signOut: async () => {},
+    isPremium: false,
+    refreshUserData: async () => {},
+  };
+  
+  return (
+    <AuthContext.Provider value={dummyAuthValue}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
 const AppWithAuth: React.FC = () => {
+  // Temporary: Skip auth for Gmail testing
+  const skipAuth = window.location.search.includes('skipauth=true');
+  
+  if (skipAuth) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <DummyAuthProvider>
+          <AuthenticatedApp />
+        </DummyAuthProvider>
+      </ThemeProvider>
+    );
+  }
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />

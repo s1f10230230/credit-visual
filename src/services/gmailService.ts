@@ -1,5 +1,6 @@
-import { merchantClassifier, ExtractedInfo } from "./merchantClassifier";
+import { merchantClassifier, ExtractedInfo, classifyCreditMailToTxn } from "./merchantClassifier";
 import { TwoLaneEmailFilter } from "./twoLaneEmailFilter";
+import { buildSimpleGmailQuery, classifySimple, type MailMeta, type MailText } from "../lib/simpleMailFilter";
 import Encoding from "encoding-japanese";
 import * as qp from "quoted-printable";
 
@@ -249,13 +250,31 @@ class GmailService {
     return this.accessToken !== null;
   }
 
+  /**
+   * Enhanced fetch and filter function with two-stage meta-filtering
+   */
+  async fetchAndFilterTwoStage(days = 365): Promise<{
+    accepted: Array<{ meta: MailMeta; amount: number }>;
+    rejected: Array<{ meta: MailMeta; reasons: string[] }>;
+    reasonsCount: Record<string, number>;
+    dropped: Record<string, number>;
+  }> {
+    await this.initializeGapi();
+    if (!this.accessToken) {
+      throw new Error("Not authenticated");
+    }
+
+    // Use the new two-stage filtering approach
+    return await fetchAndFilter(window.gapi.client.gmail, days);
+  }
+
   async getEmails(
     query?: string,
-    maxResults: number = 100
+    maxResults: number = 2000
   ): Promise<EmailData[]> {
-    // 安全な暫定版クエリ（広めの入口）
+    // シンプル版：超広い入口で最大Recall（365日）
     if (!query) {
-      query = TwoLaneEmailFilter.buildSafeGmailQuery(120);
+      query = buildSimpleGmailQuery(365); // Simple query - no subject filters, 365 days
     }
     await this.initializeGapi();
 
@@ -264,57 +283,83 @@ class GmailService {
     }
 
     try {
-      console.log("Searching emails with query:", query);
-      const response = await window.gapi.client.gmail.users.messages.list({
-        userId: "me",
-        q: query,
-        maxResults: maxResults,
-      });
-
-      console.log("Gmail API response:", response);
+      console.log("🔍 [SIMPLE] Gmail Query:", query);
+      console.log("🎯 Target: Up to", maxResults, "messages with full pagination");
+      console.log("🔑 Auth status:", this.isAuthenticated() ? "✅ Authenticated" : "❌ Not authenticated");
       
-      // デバッグ：より基本的なクエリも試してみる
-      if (!response.result.messages || response.result.messages.length === 0) {
-        console.log("No messages found with query:", query);
-        console.log("Trying simpler queries...");
+      // ★ 必ずwhile (pageToken)で全ページ回すように強化
+      let pageToken: string | undefined = undefined;
+      const allMessages: any[] = [];
+      let pageCount = 0;
+      
+      do {
+        pageCount++;
+        console.log(`📄 [SIMPLE] Page ${pageCount}${pageToken ? ` (token: ${pageToken.substring(0, 10)}...)` : ''} | Target: ${maxResults} messages`);
+        
+        let response;
+        try {
+          response = await window.gapi.client.gmail.users.messages.list({
+            userId: "me",
+            q: query,
+            maxResults: 100, // Gmail API max per page (APIの制限で100が最大)
+            pageToken,
+          });
+          console.log(`📡 [SIMPLE] API Response status:`, response.status);
+        } catch (apiError) {
+          console.error(`❌ [SIMPLE] Gmail API error on page ${pageCount}:`, apiError);
+          throw new Error(`Gmail API request failed: ${apiError.message || apiError}`);
+        }
+        
+        if (response.result.messages) {
+          allMessages.push(...response.result.messages);
+          console.log(`📧 [SIMPLE] Page ${pageCount}: ${response.result.messages.length} messages | Running total: ${allMessages.length}/${maxResults}`);
+        } else {
+          console.log(`📧 [SIMPLE] Page ${pageCount}: No messages found`);
+        }
+        
+        pageToken = response.result.nextPageToken;
+        
+        // maxResults制限に達したかチェック
+        if (allMessages.length >= maxResults) {
+          console.log(`🎯 [SIMPLE] Reached target of ${maxResults} messages, stopping pagination`);
+          break;
+        }
+        
+        // 必ず全ページ回す（pageTokenがある限り続行）
+      } while (pageToken);
+
+      if (allMessages.length === 0) {
+        console.warn("⚠️ No messages found with recall-first query");
+        console.log("🧪 Testing fallback queries...");
         
         const testQueries = [
           'JCB',
-          '楽天',
-          'カード', 
-          'in:inbox',
-          ''
+          '楽天', 
+          'subject:円',
+          'subject:利用',
+          'in:inbox newer_than:30d'
         ];
         
         for (const testQuery of testQueries) {
           try {
-            console.log("Testing query:", testQuery);
             const testResponse = await window.gapi.client.gmail.users.messages.list({
               userId: "me",
               q: testQuery,
               maxResults: 5,
             });
-            console.log(`Query "${testQuery}" returned:`, testResponse.result.messages?.length || 0, "messages");
-            
-            if (testResponse.result.messages && testResponse.result.messages.length > 0) {
-              console.log("Found emails with simpler query, there might be an issue with the original query");
-              break;
-            }
+            console.log(`🔍 "${testQuery}": ${testResponse.result.messages?.length || 0} messages`);
           } catch (testError) {
-            console.log("Test query failed:", testQuery, testError);
+            console.log(`❌ Query "${testQuery}" failed:`, testError);
           }
         }
-      }
-      
-      if (!response.result.messages) {
-        console.log("No messages found");
         return [];
       }
-      console.log("Found", response.result.messages.length, "messages");
+      
+      console.log(`✅ Total messages found across all pages: ${allMessages.length}`);
 
       const emails: EmailData[] = [];
 
-      for (const message of response.result.messages) {
+      for (const message of allMessages) {
         try {
           const emailDetail = await window.gapi.client.gmail.users.messages.get(
             {
@@ -346,28 +391,60 @@ class GmailService {
         }
       }
 
-      // 2レーン方式フィルタリングを適用（段階ログ付き）
-      console.log(`[stage0] Gmail取得完了: ${emails.length}件のメール`);
-      const filterResult = TwoLaneEmailFilter.filterEmails(emails, "[Gmail] ");
+      // 🎯 SIMPLE: 金額+文脈のみで判定
+      console.log(`[SIMPLE] [stage0] Gmail取得完了: ${emails.length}件のメール`);
       
-      console.log('=== フィルタリング統計 ===');
-      console.log('段階別:', filterResult.stats);
-      console.log('レーン別:', filterResult.stats.byLane);
-      
-      if (filterResult.validEmails.length === 0) {
-        console.error('⚠️ メールが見つかりません - 診断結果:');
-        console.error(TwoLaneEmailFilter.diagnoseZeroResults(filterResult.stats));
-        console.error('除外理由の詳細:', filterResult.stats.byReason);
+      let textOkCount = 0;
+      const classifiedEmails: EmailData[] = [];
+      const rejectedReasons: Record<string, number> = {};
+
+      for (const email of emails) {
+        // Text extraction check
+        if (email.body && email.body.trim().length > 10) {
+          textOkCount++;
+        }
+
+        const meta: MailMeta = {
+          id: email.id,
+          from: email.from,
+          subject: email.subject,
+        };
+        const body: MailText = { plain: email.body };
+        
+        const classification = classifySimple(meta, body);
+        if (classification.ok) {
+          classifiedEmails.push(email);
+          console.log(`✅ [SIMPLE] 採択: ${email.subject.substring(0, 40)}... ${classification.amountYen}円`);
+        } else {
+          rejectedReasons[classification.reason] = (rejectedReasons[classification.reason] || 0) + 1;
+          console.debug(`❌ [SIMPLE] 除外: ${email.subject.substring(0, 25)}... 理由: ${classification.reason}`);
+        }
       }
 
-      console.log('✅ 採択メール:', filterResult.validEmails.map(v => ({
-        subject: v.email.subject.substring(0, 50) + '...',
-        from: v.email.from,
-        lane: v.classification.lane,
-        amount: v.classification.amountYen
-      })));
+      console.log('🎯 === SIMPLE FILTERING RESULTS ===');
+      console.log(`[stage0] Gmail listed: ${emails.length}`);
+      console.log(`[stage1] Text available: ${textOkCount}`);
+      console.log(`[final] Accepted: ${classifiedEmails.length}`);
+      console.log(`Rejected reasons:`, rejectedReasons);
+      
+      if (classifiedEmails.length === 0) {
+        console.error('🚨 [SIMPLE] ZERO RESULTS!');
+        console.error('📊 Rejection reasons:', Object.entries(rejectedReasons).sort(([,a], [,b]) => b - a));
+        
+        if (rejectedReasons['no-text'] > emails.length * 0.5) {
+          console.error('💡 Many emails have no text - check HTML parsing');
+        }
+        if (rejectedReasons['no-amount-context'] > emails.length * 0.3) {
+          console.error('💡 Try expanding context radius or adding more trigger words');
+        }
+      } else {
+        console.log('🎉 [SIMPLE] 採択成功:', classifiedEmails.map(email => ({
+          subject: email.subject.substring(0, 30) + '...',
+          from: email.from.split('@')[1] || email.from.split('<')[0]
+        })));
+      }
 
-      return filterResult.validEmails.map(v => v.email);
+      return classifiedEmails;
     } catch (error) {
       console.error("Error fetching emails:", error);
       throw error;
@@ -380,198 +457,70 @@ class GmailService {
     try {
       const { subject, body, date, id, from } = email;
 
-      // 2レーンフィルタ済みメールなので基本検証のみ
-      // 金額が正しく抽出できるかの最終確認
-      console.log(`[Parse] processing: ${subject.substring(0, 50)}... from ${from}`);
+      console.log(`🔍 [Parse] Processing: ${subject.substring(0, 50)}... from ${from}`);
       
-      // 再分類して詳細情報を取得
-      const classification = TwoLaneEmailFilter.classifyMail(email, "[Parse] ");
-      if (!classification.ok) {
-        console.log(`[Parse] 再分類で除外: ${classification.reasons.join(', ')}`);
-        return null;
-      }
-
-      // 新しいハイブリッド分類システムを使用
-      const snippet = merchantClassifier.extractSnippet(body);
-
-      // ExtractedInfo構造体を作成
-      const extractedInfo: ExtractedInfo = {
-        amount: 0,
-        currency: "JPY",
-        snippet,
-        fromDomain: from.split("@")[1] || from,
+      // 新しいクレジットメール分類を使用（ステートメント除外付き）
+      const classificationResult = classifyCreditMailToTxn({
         subject,
-        rawBody: body,
-      };
+        from,
+        rawEmailBody: body
+      });
 
-      // 2レーンフィルタで既に検証済みの金額を使用
-      const amount = classification.amountYen;
-      console.log(`[Parse] 金額確定: ${amount}円 (2レーンフィルタ済み)`);
-
-      // 金額の最終検証（2レーンフィルタで既に検証されているが念のため）
-      if (amount === 0) {
-        console.log("No valid amount found for:", subject);
-        console.log("Email body preview:", body.substring(0, 500));
+      // スキップ対象の場合は早期リターン
+      if (classificationResult.type === 'skip') {
+        console.log(`❌ [Parse] Skipped: ${classificationResult.reason}`);
         return null;
       }
 
-      // 金額情報を ExtractedInfo に設定
-      extractedInfo.amount = amount;
+      // 正常な取引データの場合
+      const txnData = classificationResult.data;
+      console.log(`✅ [Parse] Valid transaction: ${txnData.amount}円 | ${txnData.merchant}`);
 
-      // ハイブリッド分類システムで店舗・カテゴリを判定
-      const classifiedMerchant = await merchantClassifier.classify(
-        extractedInfo
-      );
+      // 高度な分類（店舗名・カテゴリの詳細判定）は必要に応じて実行
+      let finalMerchant = txnData.merchant;
+      let finalCategory = txnData.category;
 
-      // 分類結果を使用（古いパターンマッチングをスキップ）
-      let merchant = classifiedMerchant.merchant;
-      let category = classifiedMerchant.category;
-
-      console.log("Merchant classification result:", classifiedMerchant);
-
-      // フォールバック：分類器で見つからない場合のみ従来のパターンマッチングを使用
-      // ただし、速報版メールの場合はスキップ
-      if (merchant === "不明な店舗" && !classifiedMerchant.pending) {
-        console.log(
-          "Searching for merchant in body snippet:",
-          body.substring(0, 1000)
-        );
-        const merchantPatterns = [
-          // JCB特有のパターン（実際のフォーマットに基づく）
-          /ãã.*?ã\s*([^ã\n\r]{1,50})/, // 文字化け対応：「ãã」で始まる行から店舗名抽出（50文字以内）
-          /ãã.*?ãã\s*([^ã\n\r]{1,50})/, // 別パターン（50文字以内）
-
-          // より直接的なパターン（適切な長さ制限と終了条件を追加）
-          /【ご利用先】\s*([^\n\r【】]{1,50})(?:\s|$|\n|\r|【)/,
-          /ご利用先[：:\s]*([^\n\r：【】]{1,50})(?:\s*$|\n|\r|【)/,
-          /利用先[：:\s]*([^\n\r：【】]{1,50})(?:\s*$|\n|\r|【)/,
-
-          // 一般的なパターン（適切な長さ制限を追加）
-          /ご利用店舗[：:\s]*([^\n\r：【】]{1,50})(?:\s*$|\n|\r|【)/,
-          /利用店舗[：:\s]*([^\n\r：【】]{1,50})(?:\s*$|\n|\r|【)/,
-          /加盟店[：:\s]*([^\n\r：【】]{1,50})(?:\s*$|\n|\r|【)/,
-          /店舗名[：:\s]*([^\n\r：【】]{1,50})(?:\s*$|\n|\r|【)/,
-          /加盟店名[：:\s]*([^\n\r：【】]{1,50})(?:\s*$|\n|\r|【)/,
-          /お支払先[：:\s]*([^\n\r：【】]{1,50})(?:\s*$|\n|\r|【)/,
-        ];
-
-        for (const pattern of merchantPatterns) {
-          const match = body.match(pattern);
-          console.log("Pattern:", pattern, "Match:", match);
-          if (match) {
-            merchant = match[1]
-              .trim()
-              .split(/[\n\r]/)[0]
-              .trim();
-            
-            // 不要な文字や記号を除去
-            merchant = merchant.replace(/[※*＊]/g, "").trim();
-            
-            // 明らかに店舗名でないテキストをフィルタリング
-            const invalidPatterns = [
-              /^名やお支払い方法/,
-              /詳細な情報は/,
-              /後日配信/,
-              /カード利用お知らせメール/,
-              /ご確認をお願い/,
-              /^\s*$/,
-              /^.{60,}$/, // 60文字以上は無効とする
-            ];
-            
-            const isInvalid = invalidPatterns.some(pattern => pattern.test(merchant));
-            if (isInvalid) {
-              merchant = ""; // 無効なパターンの場合は空文字にして次のパターンを試行
-              continue;
-            }
-
-            // 文字化けした店舗名の変換テーブル
-            const merchantMapping: { [key: string]: string } = {
-              "ããªã¤ããºã¤ã±ãã¯ã­ãã·ã°ããã³": "ユナイテッドシネマクロシオ",
-              "ã¢ããã«ãããã³ã": "アップル",
-              "ã¢ãããªã¼ã«": "アマゾン",
-              "JCBã¯ã¬ã¸ããããå©ç¨å": "JCBクレジットご利用分（海外利用分）",
-            };
-
-            // 文字化け変換を試行
-            for (const [corrupted, correct] of Object.entries(
-              merchantMapping
-            )) {
-              if (merchant.includes(corrupted)) {
-                merchant = correct;
-                break;
-              }
-            }
-
-            console.log("Extracted merchant:", merchant);
-            if (merchant.length > 0) {
-              break;
-            }
-          }
-        }
-      }
-
-      // カテゴリの最終処理（分類器でも不明な場合のみ従来方式を使用）
-      if (category === "その他") {
-        const categoryMapping: { [key: string]: string } = {
-          // 実際のメールで見つかった店舗名パターン
-          "APPLE COM BILL": "サブスク",
-          apple: "サブスク",
-          ﾓﾊﾞｲﾙﾊﾟｽﾓﾁﾔ: "交通費",
-          "JCBクレジットご利用分（海外利用分）": "その他",
-
-          // 一般的なパターン
-          amazon: "ショッピング",
-          netflix: "サブスク",
-          spotify: "サブスク",
-          starbucks: "食費",
-          mcdonald: "食費",
-          コンビニ: "食費",
-          ガソリン: "交通費",
-          JR: "交通費",
-          電車: "交通費",
-          モバイル: "交通費",
-          パスモ: "交通費",
+      if (finalMerchant && finalMerchant !== '不明な店舗') {
+        // ExtractedInfo構造体を作成してハイブリッド分類システムを使用
+        const snippet = merchantClassifier.extractSnippet(body);
+        const extractedInfo: ExtractedInfo = {
+          amount: txnData.amount,
+          currency: "JPY",
+          snippet,
+          fromDomain: from.split("@")[1] || from,
+          subject,
+          rawBody: body,
         };
 
-        for (const [keyword, cat] of Object.entries(categoryMapping)) {
-          if (
-            merchant.toLowerCase().includes(keyword.toLowerCase()) ||
-            subject.toLowerCase().includes(keyword.toLowerCase())
-          ) {
-            category = cat;
-            break;
-          }
+        const classifiedMerchant = await merchantClassifier.classify(extractedInfo);
+        
+        if (classifiedMerchant.confidence > 0.7) {
+          finalMerchant = classifiedMerchant.merchant;
+          finalCategory = classifiedMerchant.category;
+          console.log(`🎯 [Parse] Enhanced classification: ${finalMerchant} (${finalCategory})`);
         }
       }
 
-      // 利用日の抽出
-      const dateMatch = body.match(/(\d{4})[年\/\-](\d{1,2})[月\/\-](\d{1,2})/);
-      let transactionDate = new Date(date).toISOString().split("T")[0];
-
-      if (dateMatch) {
-        const year = dateMatch[1];
-        const month = dateMatch[2].padStart(2, "0");
-        const day = dateMatch[3].padStart(2, "0");
-        transactionDate = `${year}-${month}-${day}`;
-      }
+      // 利用日の抽出（メール本文から優先、無ければフォールバック）
+      let transactionDate = txnData.date || new Date(date).toISOString().split("T")[0];
 
       return {
         id,
-        amount,
-        merchant,
+        amount: txnData.amount,
+        merchant: finalMerchant,
         date: transactionDate,
-        category,
-        status: amount > 0 ? "confirmed" : "unknown",
-        isSubscription: classifiedMerchant.is_subscription, // Classifierの判定結果を保存
-        confidence: classifiedMerchant.confidence,
+        category: finalCategory,
+        status: "confirmed",
+        isSubscription: finalMerchant.toLowerCase().includes('subscription') || 
+                       finalMerchant.toLowerCase().includes('サブスク'),
+        confidence: 0.95,
         // メール情報を追加
         emailSubject: subject,
         emailSender: from,
         messageId: id,
         rawEmailBody: body,
         source: 'gmail',
-        notes: `信頼度: ${Math.round((classifiedMerchant.confidence || 0.8) * 100)}%` +
-               ` | 2レーン(${classification.lane})済み | フィルタ信頼度: ${Math.round(classification.confidence * 100)}%`,
+        notes: txnData.notes || '信頼度: 95% | ラベル抽出',
       };
     } catch (error) {
       console.error("Error parsing credit notification:", error);

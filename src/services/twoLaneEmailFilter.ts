@@ -18,10 +18,10 @@ export type FilterStageStats = {
  * レーンB: 加盟店のレシート/購入通知
  */
 export class TwoLaneEmailFilter {
-  // 正規表現（提案されたもの）
-  private static readonly AMOUNT_RE = /(?<!第)(?<![0-9])([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{1,6})\s*円(?!以上)/;
-  private static readonly CONTEXT_RE = /(利用|請求|明細|注文|領収|決済|支払い)/;
-  private static readonly PROMO_RE = /(クーポン|キャンペーン|セール|割引コード|今だけ|ポイント還元)/i;
+  // 強化された正規表現（"抜け漏れゼロ寄り"対応）
+  private static readonly AMOUNT_RE = /(?<!第)(?<![0-9])([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{1,6})(?:\s*|　*)(?:円|JPY|￥)(?!以上)/;
+  private static readonly CONTEXT_RE = /(利用|請求|明細|注文|領収|購入|決済|支払|支払い|charged|amount)/i;
+  private static readonly PROMO_RE = /(クーポン|キャンペーン|セール|割引コード|タイムセール|今だけ|ポイント還元|メルマガ)/i;
 
   private static readonly MIN_YEN = 50;
   private static readonly MAX_YEN = 1_000_000;
@@ -45,13 +45,15 @@ export class TwoLaneEmailFilter {
   ];
 
   /**
-   * 安全な暫定版Gmailクエリ（広めの入口）
+   * 安全な暫定版Gmailクエリ（広めの入口→後段で厳しく絞る方式）
    */
-  static buildSafeGmailQuery(days = 120): string {
+  static buildSafeGmailQuery(days = 180): string {
     return [
       `newer_than:${days}d`,
-      `(subject:(ご利用 OR 利用 OR 請求 OR 明細 OR 注文 OR 領収 OR 購入 OR 決済) OR "ご利用金額" OR "円")`,
-      `-subject:(クーポン OR キャンペーン OR セール OR 開催 OR イベント)`,
+      // 件名は広め（レシート系も拾う）
+      `(subject:(ご利用 OR 利用 OR 請求 OR 明細 OR 注文 OR 領収 OR 購入 OR 決済) OR "ご利用金額" OR "円" OR "領収書" OR "receipt")`,
+      // 明確に広告っぽい件名は除外
+      `-subject:(クーポン OR キャンペーン OR セール OR 開催 OR イベント OR 倍率)`,
     ].join(" ");
   }
 
@@ -97,8 +99,17 @@ export class TwoLaneEmailFilter {
    * 発行会社ドメインかチェック
    */
   private static hasIssuerDomain(from: string): boolean {
-    const f = from.toLowerCase();
+    const f = (from || "").toLowerCase();
     return this.ISSUER_DOMAINS.some(d => f.includes(d));
+  }
+
+  /**
+   * List-Unsubscribeヘッダーがあるかチェック（広告メール検出用）
+   */
+  private static hasListUnsub(headers?: Record<string, string>): boolean {
+    if (!headers) return false;
+    const k = Object.keys(headers).find(h => h.toLowerCase() === "list-unsubscribe");
+    return Boolean(k);
   }
 
   /**
@@ -116,9 +127,9 @@ export class TwoLaneEmailFilter {
   }
 
   /**
-   * 金額の近傍に周辺語があるかチェック
+   * 金額の近傍に周辺語があるかチェック（拡張半径）
    */
-  private static contextNearAmount(text: string, radius = 40): boolean {
+  private static contextNearAmount(text: string, radius = 120): boolean {
     const m = this.AMOUNT_RE.exec(text);
     if (!m) return false;
     
@@ -133,7 +144,7 @@ export class TwoLaneEmailFilter {
   /**
    * メール分類（2レーン + 最終ゲート）
    */
-  static classifyMail(email: EmailData, logPrefix = ""): Classification {
+  static classifyMail(email: EmailData, logPrefix = "", headers?: Record<string, string>): Classification {
     const reasons: string[] = [];
     const subject = (email.subject || "").trim();
     const from = (email.from || "").trim();
@@ -173,6 +184,11 @@ export class TwoLaneEmailFilter {
       return { ok: false, lane, reasons: [...reasons, "promo-subject"], confidence };
     }
 
+    // プロモヘッダがあり かつ 件名が広告寄り → 除外
+    if (this.hasListUnsub(headers) && /(お得|セール|キャンペーン|クーポン)/.test(subject)) {
+      return { ok: false, lane, reasons: [...reasons, "list-unsub-promo"], confidence };
+    }
+
     if (subjectOk) {
       confidence += 0.2;
       reasons.push("subject-ok");
@@ -187,7 +203,7 @@ export class TwoLaneEmailFilter {
     confidence += 0.3; // 金額検出
     reasons.push(`amount-${amount}`);
 
-    if (!this.contextNearAmount(text, 40)) {
+    if (!this.contextNearAmount(text, 120)) {
       return { ok: false, lane, reasons: [...reasons, "no-context-near-amount"], confidence };
     }
 

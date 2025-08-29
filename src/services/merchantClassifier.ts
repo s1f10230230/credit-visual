@@ -1,5 +1,6 @@
 // LLM + ルールベースのハイブリッド店舗名分類器
 import { subscriptionDictionaryService } from "./subscriptionDictionaryService";
+import { RawEmail, extractTxnFromUsageMail, looksLikeStatement } from "../parsers/creditMail";
 
 export interface ExtractedInfo {
   amount: number;
@@ -931,6 +932,55 @@ ${info.snippet}
 }
 
 export const merchantClassifier = new MerchantClassifier();
+
+// 新しいクレジットメール分類関数（ステートメント除外付き）
+export function classifyCreditMailToTxn(
+  email: { subject: string; from?: string; rawEmailBody: string }
+) {
+  // ★ ここでは rawEmailBody は既に文字コードデコード済み・HTML→テキスト済みである前提
+  const mail: RawEmail = {
+    subject: email.subject ?? '',
+    from: email.from,
+    body: email.rawEmailBody ?? '',
+  };
+
+  console.log('🔍 [CREDIT_MAIL] Processing email:', email.subject?.substring(0, 50));
+
+  // 1) ステートメント/明細更新はスキップ
+  if (looksLikeStatement(mail)) {
+    console.log('❌ [CREDIT_MAIL] Statement email detected, skipping');
+    return { type: 'skip', reason: 'statement_mail' as const };
+  }
+
+  // 2) 取引メール抽出
+  const txn = extractTxnFromUsageMail(mail);
+  if (!txn) {
+    console.log('❌ [CREDIT_MAIL] No valid transaction fields found');
+    return { type: 'skip', reason: 'no_usage_fields' as const };
+  }
+
+  console.log('✅ [CREDIT_MAIL] Valid transaction extracted:', {
+    amount: txn.amount,
+    merchant: txn.merchant?.substring(0, 30),
+    date: txn.date,
+    sourceCard: txn.sourceCard
+  });
+
+  // 3) 正常系：アプリ用オブジェクトに整形
+  return {
+    type: 'txn' as const,
+    data: {
+      amount: txn.amount,
+      date: txn.date,                     // 無ければ後段で受信日フォールバックしてもOK
+      merchant: txn.merchant ?? '不明な店舗',
+      category: 'その他',
+      status: 'confirmed',
+      source: 'gmail',
+      notes: `信頼度: 95% | ラベル抽出 | ${txn.sourceCard ?? '不明カード'}`,
+      sourceCard: txn.sourceCard,
+    },
+  };
+}
 
 // ユーティリティ関数をエクスポート
 export { isRakutenRealtimeNotice, extractMerchantSmart };
