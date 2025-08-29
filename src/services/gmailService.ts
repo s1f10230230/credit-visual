@@ -1,4 +1,5 @@
 import { merchantClassifier, ExtractedInfo, classifyCreditMailToTxn } from "./merchantClassifier";
+import { classifyMailFlexibly } from "../lib/flexibleMailFilter";
 import { TwoLaneEmailFilter } from "./twoLaneEmailFilter";
 import { buildSimpleGmailQuery, classifySimple, type MailMeta, type MailText } from "../lib/simpleMailFilter";
 import Encoding from "encoding-japanese";
@@ -459,7 +460,76 @@ class GmailService {
 
       console.log(`🔍 [Parse] Processing: ${subject.substring(0, 50)}... from ${from}`);
       
-      // 新しいクレジットメール分類を使用（ステートメント除外付き）
+      // 新しい柔軟フィルターを最初に試行（抜け漏れ防止）
+      const flexibleResult = classifyMailFlexibly(
+        { id, from, subject },
+        { plain: body }
+      );
+
+      if (flexibleResult.ok) {
+        // 柔軟フィルターで成功した場合
+        console.log(`✅ [FLEXIBLE] Success: ${flexibleResult.amountYen}円 | Trust: ${flexibleResult.trustLevel} | Confidence: ${flexibleResult.confidence}%`);
+        
+        const txnData = {
+          amount: flexibleResult.amountYen!,
+          merchant: flexibleResult.extractedData.merchant || '不明な店舗',
+          date: flexibleResult.extractedData.date || new Date().toISOString().split('T')[0],
+          category: 'unknown' as const,
+          trustLevel: flexibleResult.trustLevel,
+          confidence: flexibleResult.confidence
+        };
+
+        // 高度な分類処理は従来通り
+        let finalMerchant = txnData.merchant;
+        let finalCategory = txnData.category;
+
+        if (finalMerchant && finalMerchant !== '不明な店舗') {
+          // ExtractedInfo構造体を作成してハイブリッド分類システムを使用
+          const snippet = merchantClassifier.extractSnippet(body);
+          const extractedInfo: ExtractedInfo = {
+            amount: txnData.amount,
+            currency: "JPY",
+            snippet,
+            fromDomain: from.split("@")[1] || from,
+            subject,
+            rawBody: body,
+          };
+
+          const classifiedMerchant = await merchantClassifier.classify(extractedInfo);
+          
+          if (classifiedMerchant.confidence > 0.7) {
+            finalMerchant = classifiedMerchant.merchant;
+            finalCategory = classifiedMerchant.category;
+            console.log(`🎯 [FLEXIBLE] Enhanced classification: ${finalMerchant} (${finalCategory})`);
+          }
+        }
+
+        // 利用日の抽出（メール本文から優先、無ければフォールバック）
+        let transactionDate = txnData.date || new Date(date).toISOString().split("T")[0];
+
+        return {
+          id,
+          amount: txnData.amount,
+          merchant: finalMerchant,
+          date: transactionDate,
+          category: finalCategory,
+          status: "confirmed",
+          isSubscription: finalMerchant.toLowerCase().includes('subscription') || 
+                         finalMerchant.toLowerCase().includes('サブスク'),
+          confidence: (txnData.confidence || 100) / 100,
+          // メール情報を追加
+          emailSubject: subject,
+          emailSender: from,
+          messageId: id,
+          rawEmailBody: body,
+          source: 'gmail',
+          notes: `柔軟フィルター: ${flexibleResult.trustLevel} | Confidence: ${flexibleResult.confidence}%`,
+        };
+      }
+
+      // フォールバック: 柔軟フィルターで失敗した場合は従来の厳格フィルター
+      console.log(`⚠️ [FLEXIBLE] Failed, trying legacy filter...`);
+      
       const classificationResult = classifyCreditMailToTxn({
         subject,
         from,
@@ -468,59 +538,34 @@ class GmailService {
 
       // スキップ対象の場合は早期リターン
       if (classificationResult.type === 'skip') {
-        console.log(`❌ [Parse] Skipped: ${classificationResult.reason}`);
+        console.log(`❌ [LEGACY] Also skipped: ${classificationResult.reason}`);
         return null;
       }
 
-      // 正常な取引データの場合
-      const txnData = classificationResult.data;
-      console.log(`✅ [Parse] Valid transaction: ${txnData.amount}円 | ${txnData.merchant}`);
-
-      // 高度な分類（店舗名・カテゴリの詳細判定）は必要に応じて実行
-      let finalMerchant = txnData.merchant;
-      let finalCategory = txnData.category;
-
-      if (finalMerchant && finalMerchant !== '不明な店舗') {
-        // ExtractedInfo構造体を作成してハイブリッド分類システムを使用
-        const snippet = merchantClassifier.extractSnippet(body);
-        const extractedInfo: ExtractedInfo = {
-          amount: txnData.amount,
-          currency: "JPY",
-          snippet,
-          fromDomain: from.split("@")[1] || from,
-          subject,
-          rawBody: body,
-        };
-
-        const classifiedMerchant = await merchantClassifier.classify(extractedInfo);
-        
-        if (classifiedMerchant.confidence > 0.7) {
-          finalMerchant = classifiedMerchant.merchant;
-          finalCategory = classifiedMerchant.category;
-          console.log(`🎯 [Parse] Enhanced classification: ${finalMerchant} (${finalCategory})`);
-        }
-      }
+      // 従来の処理を継続...
+      const legacyTxnData = classificationResult.data;
+      console.log(`✅ [LEGACY] Valid transaction: ${legacyTxnData.amount}円 | ${legacyTxnData.merchant}`);
 
       // 利用日の抽出（メール本文から優先、無ければフォールバック）
-      let transactionDate = txnData.date || new Date(date).toISOString().split("T")[0];
+      let transactionDate = legacyTxnData.date || new Date(date).toISOString().split("T")[0];
 
       return {
         id,
-        amount: txnData.amount,
-        merchant: finalMerchant,
+        amount: legacyTxnData.amount,
+        merchant: legacyTxnData.merchant,
         date: transactionDate,
-        category: finalCategory,
+        category: legacyTxnData.category,
         status: "confirmed",
-        isSubscription: finalMerchant.toLowerCase().includes('subscription') || 
-                       finalMerchant.toLowerCase().includes('サブスク'),
-        confidence: 0.95,
+        isSubscription: legacyTxnData.merchant.toLowerCase().includes('subscription') || 
+                       legacyTxnData.merchant.toLowerCase().includes('サブスク'),
+        confidence: 0.8, // 従来フィルターは少し低い confidence
         // メール情報を追加
         emailSubject: subject,
         emailSender: from,
         messageId: id,
         rawEmailBody: body,
         source: 'gmail',
-        notes: txnData.notes || '信頼度: 95% | ラベル抽出',
+        notes: legacyTxnData.notes || '従来フィルター | 信頼度: 80%',
       };
     } catch (error) {
       console.error("Error parsing credit notification:", error);

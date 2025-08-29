@@ -32,14 +32,15 @@ const patterns = {
   // 金額抽出 - より緩やかに
   amount: /([0-9０-９,，]+)\s*円|¥\s*([0-9０-９,，]+)|([0-9０-９,，]+)\s*JPY/gi,
   
-  // 日付パターン
-  date: /(\d{4})[\/年\-.](\d{1,2})[\/月\-.](\d{1,2})[日\s]?/g,
+  // 日付 + 時刻（任意）対応
+  date: /(\d{4})[\/年\-.](\d{1,2})[\/月\-.](\d{1,2})(?:[日\s]|\s+)?(\d{1,2}:\d{2})?/g,
   
   // 店舗名パターン
   merchant: {
     labeled: /(?:ご利用先|利用先|店名|加盟店|merchant)[:：]\s*(.+?)(?:\n|$)/gi,
     bracket: /【(.+?)】/g,
-    parenthesis: /(.+?)（.+?）/g
+    parenthesis: /(.+?)（.+?）/g,
+    inlineBeforeAmount: /([^\s　]+)\s+[0-9,，]+円/g
   },
   
   // 件名・本文の緩やかな判定パターン
@@ -58,15 +59,16 @@ function extractDomainFromEmail(email: string): string {
 function getDomainTrustLevel(domain: string): TrustLevel | null {
   const config = officialDomainsConfig;
   
-  if (config.domains.primary_issuers.some(d => domain.includes(d))) {
+  // より厳密に: サブドメインは許容するが endsWith で判定
+  if (config.domains.primary_issuers.some(d => domain.endsWith(d))) {
     return 'high';
   }
   
-  if (config.domains.trusted_merchants.some(d => domain.includes(d))) {
+  if (config.domains.trusted_merchants.some(d => domain.endsWith(d))) {
     return 'medium';
   }
   
-  if (config.domains.user_added.some(d => domain.includes(d))) {
+  if (config.domains.user_added.some(d => domain.endsWith(d))) {
     return 'medium';
   }
   
@@ -135,6 +137,12 @@ function extractMerchantFromText(text: string): string | null {
   
   // Try parenthesis patterns  
   match = text.match(patterns.merchant.parenthesis);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  
+  // Try inline patterns: e.g. "ROCKET NOW 785円"
+  match = text.match(patterns.merchant.inlineBeforeAmount);
   if (match && match[1]) {
     return match[1].trim();
   }

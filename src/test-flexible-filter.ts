@@ -130,13 +130,49 @@ const promoResult = classifyMailFlexibly(promoMixedEmail, promoMixedEmail.body);
 console.log('結果:', promoResult);
 console.log('');
 
+// 加盟店なしのメール
+const noMerchantEmail = {
+  id: 'test-6',
+  subject: '【ご利用速報】金額のみ',
+  from: 'alert@dcard.docomo.ne.jp',
+  body: {
+    plain: `カードご利用のお知らせ
+ご利用金額: 5,432円
+詳細はWEB明細でご確認ください。`
+  }
+};
+
+console.log('6. 加盟店なしメールテスト');
+const noMerchantResult = classifyMailFlexibly(noMerchantEmail, noMerchantEmail.body);
+console.log('結果:', noMerchantResult);
+console.log('');
+
+// 請求確定メール（利用速報ではない）
+const statementEmail = {
+  id: 'test-7',
+  subject: '【MUFGカード】ご請求金額確定のお知らせ',
+  from: 'notice@cr.mufg.jp',
+  body: {
+    plain: `2025年08月ご請求金額が確定しました。
+請求金額: 12,345円
+詳細はMUFGカードWEBサービスをご確認ください。`
+  }
+};
+
+console.log('7. 請求確定メールテスト');
+const statementResult = classifyMailFlexibly(statementEmail, statementEmail.body);
+console.log('結果:', statementResult);
+console.log('');
+
 console.log('=== 📊 結果サマリー ===');
 const results = [
   { name: '楽天', result: rakutenResult },
   { name: 'JCB', result: jcbResult },
   { name: '三井住友', result: smcbResult },
   { name: 'MUFG風', result: mufgResult },
-  { name: 'プロモ混在', result: promoResult }
+  { name: 'プロモ混在', result: promoResult },
+  { name: '加盟店なし', result: noMerchantResult },
+  { name: '請求確定', result: statementResult }
 ];
 
 results.forEach(({ name, result }) => {
