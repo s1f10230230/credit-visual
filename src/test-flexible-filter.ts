@@ -326,8 +326,8 @@ const additionalEmails = [
 
 const additionalResults: any[] = [];
 
-additionalEmails.forEach(({ name, email }) => {
-  console.log(`${additionalEmails.indexOf({ name, email }) + 8}. ${name}カードテスト`);
+additionalEmails.forEach(({ name, email }, idx) => {
+  console.log(`${idx + 8}. ${name}カードテスト`);
   const result = classifyMailFlexibly(email, email.body);
   console.log('結果:', result);
   console.log('');

@@ -29,8 +29,8 @@ export type FlexibleClassification = {
 
 // 正規表現パターン
 const patterns = {
-  // 金額抽出 - より緩やかに
-  amount: /([0-9０-９,，]+)\s*円|¥\s*([0-9０-９,，]+)|([0-9０-９,，]+)\s*JPY/gi,
+  // 金額抽出 - 円/¥/￥/&yen;/NBSP/JPY 対応
+  amount: /([0-9０-９,，]+)\s*円|(?:¥|￥)\s*[\u00A0\u2000-\u200B]?\s*([0-9０-９,，]+)|([0-9０-９,，]+)\s*JPY/gi,
   
   // 日付 + 時刻（任意）対応
   date: /(\d{4})[\/年\-.](\d{1,2})[\/月\-.](\d{1,2})(?:[日\s]|\s+)?(\d{1,2}:\d{2})?/g,
@@ -40,7 +40,8 @@ const patterns = {
     labeled: /(?:ご利用先|利用先|店名|加盟店|merchant)[:：]\s*(.+?)(?:\n|$)/i,
     bracket: /【(.+?)】/,
     parenthesis: /(.+?)（.+?）/,
-    inlineBeforeAmount: /([^\s　][^0-9]*?)\s+[0-9,，]+円/
+    // 行頭: 任意文字列（数字含まない） + 空白 + 金額
+    inlineBeforeAmount: /^([^\d\n\r]+?)\s+[0-9,，]+円/m
   },
   
   // 件名・本文の緩やかな判定パターン
@@ -152,16 +153,22 @@ function extractMerchantFromText(text: string): string | null {
 
 function pickBodyText(body: MailText): string {
   if (body.plain && body.plain.trim()) {
-    return body.plain.replace(/\r/g, '\n').replace(/\u00A0/g, ' ').trim();
+    return body.plain
+      .replace(/\r/g, '\n')
+      .replace(/\u00A0/g, ' ')         // NBSP
+      .replace(/&yen;|&#165;/gi, '¥')  // HTMLエンティティ
+      .trim();
   }
   if (body.html && body.html.trim()) {
-    // Simple HTML to text conversion
+    // Simple HTML to text conversion with entity decoding
     return body.html
+      .replace(/&yen;|&#165;/gi, '¥')
       .replace(/<script[\s\S]*?<\/script>/gi, '')
       .replace(/<style[\s\S]*?<\/style>/gi, '')
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n')
       .replace(/<[^>]+>/g, ' ')
+      .replace(/\u00A0/g, ' ') // NBSP
       .replace(/\s+/g, ' ')
       .trim();
   }
