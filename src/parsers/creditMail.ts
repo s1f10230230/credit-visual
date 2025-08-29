@@ -52,25 +52,25 @@ const rx = {
 
   merchantLine: new RegExp(
     [
-      // JCB: 【】括弧形式
-      '【ご利用先】\\s*(.+)',
+      // JCB: 【】括弧形式 (最優先)
+      '【ご利用先】\\s*(.+?)(?:\\s*$)',
       // 三井住友カード: 店舗名（買物）形式
-      '([A-Z0-9\\s]+)\\s*（.*?）',
-      // 楽天カード: テーブル内の店舗名（日付の後）
-      '[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}\\s+([^\\s]+)',
+      '^([A-Z0-9][A-Z0-9\\s\\-]*[A-Z0-9\\s])\\s*（.*?）',
       // 一般的なコロン形式
       '■?\\s*(?:利用先|ご利用店(?:舗名)?|ご利用先|加盟店名)\\s*[:：]\\s*(.+)',
-    ].join('|'), 'i'
+      // 楽天カード: テーブル内の店舗名（日付の後） - より具体的にして最後に配置
+      '[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}\\s+([^\\s]+)\\s+[0-9,，]+円',
+    ].join('|'), 'im'
   ),
 
   dateLine: new RegExp(
     [
       // 三井住友カード: ご利用日時形式
       'ご利用日時[：:]\\s*([0-9０-９]{4})/([0-9０-９]{1,2})/([0-9０-９]{1,2})',
-      // 楽天カード: テーブル形式（ご利用日列）
-      'ご利用日[\\s\\n\\r]+.*?([0-9０-９]{4})/([0-9０-９]{1,2})/([0-9０-９]{1,2})',
       // JCB: 【】括弧形式（日時含む）
       '【ご利用日時[^】]*】\\s*([0-9０-９]{4})/([0-9０-９]{1,2})/([0-9０-９]{1,2})',
+      // 楽天カード: テーブル形式（実際のパターンに合わせて修正）
+      '([0-9０-９]{4})/([0-9０-９]{1,2})/([0-9０-９]{1,2})\\s+[^\\s]+\\s+[0-9,，]+円',
       // 一般的なコロン形式
       '■?\\s*(?:利用日|ご利用日)\\s*[:：]\\s*([0-9０-９]{4})/([0-9０-９]{1,2})/([0-9０-９]{1,2})',
     ].join('|')
@@ -149,10 +149,19 @@ export function extractTxnFromUsageMail(mail: RawEmail): Txn | null {
   let dateStr: string | undefined;
   const dLine = rx.dateLine.exec(mail.body);
   if (dLine) {
-    const yyyy = normalizeNum(dLine[1]);
-    const mm = clamp2(parseInt(normalizeNum(dLine[2]), 10));
-    const dd = clamp2(parseInt(normalizeNum(dLine[3]), 10));
-    dateStr = `${yyyy}-${mm}-${dd}`;
+    // Find the first set of three consecutive valid date groups
+    for (let i = 1; i < dLine.length - 2; i += 3) {
+      const yyyy = dLine[i];
+      const mm = dLine[i + 1]; 
+      const dd = dLine[i + 2];
+      if (yyyy && mm && dd) {
+        const normalizedYear = normalizeNum(yyyy);
+        const normalizedMonth = clamp2(parseInt(normalizeNum(mm), 10));
+        const normalizedDay = clamp2(parseInt(normalizeNum(dd), 10));
+        dateStr = `${normalizedYear}-${normalizedMonth}-${normalizedDay}`;
+        break;
+      }
+    }
   }
 
   // 4) 速報のノイズ除外（店舗が無く速報文言がある）
