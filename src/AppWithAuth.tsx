@@ -49,7 +49,9 @@ const DummyAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       email: 'test@example.com', 
       planType: 'free' as const,
       gmailConnected: false,
-      preferences: { notifications: true, reminderDays: 3, currency: 'JPY' as const }
+      preferences: { notifications: true, reminderDays: 3, currency: 'JPY' as const },
+      createdAt: new Date(),
+      lastLoginAt: new Date()
     },
     loading: false,
     signInWithGoogle: async () => {},

@@ -59,7 +59,7 @@ import { gmailService, CreditTransaction } from "./services/gmailService";
 import AdBanner from "./components/AdBanner";
 import OnboardingWizard from "./components/OnboardingWizard";
 import { notificationService } from "./services/notificationService";
-import { cardBillingService } from "./services/cardBillingService";
+// import { cardBillingService } from "./services/cardBillingService";
 import CardBillingSettingsDialog from "./components/CardBillingSettings";
 import SubscriptionDashboard from "./components/SubscriptionDashboard";
 import VisualAnalytics from "./components/VisualAnalytics";
@@ -669,7 +669,7 @@ const App: React.FC = () => {
                       <AccountBalanceWallet />
                     </Avatar>
                   </Grid>
-                  <Grid xs>
+                  <Grid item xs>
                     <Typography variant="h6" sx={{ fontWeight: "bold" }}>
                       今月の支出
                     </Typography>

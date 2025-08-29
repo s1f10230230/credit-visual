@@ -5,7 +5,7 @@ class StripeService {
   private stripe: Promise<Stripe | null>;
 
   constructor() {
-    this.stripe = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+    this.stripe = loadStripe((import.meta.env as any).VITE_STRIPE_PUBLISHABLE_KEY);
   }
 
   /**

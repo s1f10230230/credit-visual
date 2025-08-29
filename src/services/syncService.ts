@@ -1,6 +1,7 @@
 import { gmailService, CreditTransaction } from './gmailService';
 import { databaseService } from './databaseService';
 import { SyncStatus } from '../types/database';
+import { Timestamp } from 'firebase/firestore';
 
 export interface SyncProgress {
   phase: 'initial' | 'background' | 'incremental';
@@ -97,7 +98,7 @@ class SyncService {
 
       // 同期ステータス更新
       await databaseService.updateSyncStatus(userId, {
-        lastSyncAt: new Date(),
+        lastSyncAt: Timestamp.now(),
         isInitialSyncComplete: true,
         totalTransactions: transactions.length,
         syncPeriodMonths: 3
@@ -256,7 +257,7 @@ class SyncService {
 
       // 同期ステータス更新
       await databaseService.updateSyncStatus(userId, {
-        lastSyncAt: new Date(),
+        lastSyncAt: Timestamp.now(),
         totalTransactions: syncStatus.totalTransactions + newTransactions.length
       });
 
