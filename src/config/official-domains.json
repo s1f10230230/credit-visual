@@ -1,0 +1,34 @@
+{
+  "spec_version": "1.0.0",
+  "last_updated": "2025-08-29",
+  "domains": {
+    "primary_issuers": [
+      "rakuten-card.co.jp",
+      "smbc-card.com", 
+      "jcb.co.jp",
+      "cr.mufg.jp",
+      "aeon.co.jp",
+      "orico.co.jp",
+      "epos.co.jp",
+      "paypay-card.co.jp",
+      "dcard.docomo.ne.jp",
+      "kddi-fs.com",
+      "americanexpress.co.jp"
+    ],
+    "trusted_merchants": [
+      "amazon.co.jp",
+      "amazon.com",
+      "apple.com",
+      "google.com",
+      "paypal.com",
+      "stripe.com",
+      "mercari.com"
+    ],
+    "user_added": []
+  },
+  "trust_levels": {
+    "high": "Official card issuer domain match",
+    "medium": "Trusted merchant or subject/content pattern match", 
+    "low": "Amount extraction only"
+  }
+}
