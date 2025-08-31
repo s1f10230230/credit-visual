@@ -29,14 +29,16 @@ export type FlexibleClassification = {
 
 // 正規表現パターン
 const patterns = {
-  // 金額抽出 - 年（20xx）直後を除外する負の先読み付き
-  amount: /(?:¥|￥)\s*([0-9０-９,，]+)(?!\s*20\d{2})|([0-9０-９,，]+)\s*円(?!\s*20\d{2})|([0-9０-９,，]+)\s*JPY\b/gi,
+  // 金額抽出 - 年（20xx）直後を除外する負の先読み付き + 楽天カード対応
+  amount: /■利用金額[:：]\s*([0-9０-９,，]+)\s*円|(?:¥|￥)\s*([0-9０-９,，]+)(?!\s*20\d{2})|([0-9０-９,，]+)\s*円(?!\s*20\d{2})|([0-9０-９,，]+)\s*JPY\b/gi,
   
   // 日付 + 時刻（任意）対応
   date: /(\d{4})[\/年\-.](\d{1,2})[\/月\-.](\d{1,2})(?:[日\s]|\s+)?(\d{1,2}:\d{2})?/g,
   
   // 店舗名パターン (グローバルフラグ削除でmatch[1]問題を修正)
   merchant: {
+    // 楽天カード: ■利用先: 形式 (Apple決済対応 - 最優先)
+    rakuten: /■利用先[:：]\s*([A-Z0-9\s]+)/i,
     labeled: /(?:ご利用先|利用先|店名|加盟店|merchant)[:：]\s*(.+?)(?:\n|$)/i,
     bracket: /【(.+?)】/,
     parenthesis: /(.+?)（.+?）/,
@@ -133,8 +135,8 @@ function extractAmountFromText(text: string): number | null {
   const candidates: { match: RegExpMatchArray, amount: number }[] = [];
   
   for (const match of matches) {
-    // Check which group matched
-    const amountStr = match[1] || match[2] || match[3];
+    // Check which group matched - 楽天カード対応で match[1] も含む
+    const amountStr = match[1] || match[2] || match[3] || match[4];
     if (amountStr) {
       const amount = normalizeAmount(amountStr);
       if (amount && amount >= 1 && amount <= 10_000_000) { // 上限は緩め（月次請求考慮）
@@ -164,8 +166,14 @@ function extractDateFromText(text: string): string | null {
 }
 
 function extractMerchantFromText(text: string): string | null {
-  // Try labeled patterns first
-  let match = text.match(patterns.merchant.labeled);
+  // 楽天カード専用パターンを最優先
+  let match = text.match(patterns.merchant.rakuten);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  
+  // Try labeled patterns
+  match = text.match(patterns.merchant.labeled);
   if (match && match[1]) {
     return match[1].trim();
   }
