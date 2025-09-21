@@ -1,0 +1,33 @@
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Skip middleware for most requests to improve performance
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api') ||
+    pathname.includes('.') ||
+    pathname === '/favicon.ico'
+  ) {
+    return NextResponse.next();
+  }
+
+  // Simple authentication check
+  const authToken = request.cookies.get('auth-token')?.value;
+  const isAuthenticated = authToken === 'true';
+  
+  // Basic routing logic - simplified for performance
+  if (!isAuthenticated && pathname.startsWith('/app/dashboard')) {
+    return NextResponse.redirect(new URL('/app/auth', request.url));
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+  ],
+};
